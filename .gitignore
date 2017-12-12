@@ -1,0 +1,4 @@
+VMIs/*.img
+packages/*
+DockerHomeFolders/*
+VMI_UserfolderBackups/*
