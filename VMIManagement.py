@@ -82,13 +82,13 @@ class VMIManager:
     def removeApplication(self, applicationName):pass
 
     @abstractmethod
-    def exportUserDir(self): pass
+    def exportHomeDir(self): pass
 
     @abstractmethod
-    def importUserDir(self):pass
+    def importHomeDir(self):pass
 
     @abstractmethod
-    def removeUserDir(self):pass
+    def removeHomeDir(self):pass
 
     @staticmethod
     def compare(a, b):
@@ -358,10 +358,10 @@ class VMIManagerAPT(VMIManager):
     def removeApplication(self, applicationName):
         print ('\n=== Remove ' + applicationName + ' from VMI: ' + self.pathToDisk)
         guest = self.createGuestFSHandler()
-        guest.sh("apt-get -q -y remove " + applicationName)
+        guest.sh("apt-get purge --auto-remove " + applicationName)
         self.shutdownGuestFSHandler(guest)
 
-    def exportUserDir(self):
+    def exportHomeDir(self):
         print ('\n=== Export Userfolder from VMI: ' + self.pathToDisk)
         if os.path.isfile(self.localUserBackupPath):
             print "Existing user folder in " + self.localUserBackupPath + " will be replaced."
@@ -370,7 +370,7 @@ class VMIManagerAPT(VMIManager):
         guest.tar_out(self.vmi_UserFolder, self.localUserBackupPath)
         self.shutdownGuestFSHandler(guest)
 
-    def importUserDir(self):
+    def importHomeDir(self):
         print ('\n=== Import Userfolder to VMI: ' + self.pathToDisk)
         guest = self.createGuestFSHandler()
         if guest.exists(self.vmi_UserFolder):
@@ -380,7 +380,7 @@ class VMIManagerAPT(VMIManager):
         guest.tar_in(self.localUserBackupPath, self.vmi_UserFolder)
         self.shutdownGuestFSHandler(guest)
 
-    def removeUserDir(self):
+    def removeHomeDir(self):
         print ('\n=== Remove Userfolder from VMI: ' + self.pathToDisk)
         guest = self.createGuestFSHandler()
         guest.rm_rf(self.vmi_UserFolder)
@@ -507,7 +507,7 @@ class VMIManagerDNF(VMIManager):
         self.stopLoadingAnimation()
         self.shutdownGuestFSHandler(guest)
 
-    def exportUserDir(self):
+    def exportHomeDir(self):
         print ('\n=== Export Userfolder from VMI: ' + self.pathToDisk)
         if os.path.isfile(self.localUserBackupPath):
             print "Existing user folder in " + self.localUserBackupPath + " will be replaced."
@@ -518,7 +518,7 @@ class VMIManagerDNF(VMIManager):
         self.shutdownGuestFSHandler(guest)
         self.stopLoadingAnimation()
 
-    def importUserDir(self):
+    def importHomeDir(self):
         print ('\n=== Import Userfolder to VMI: ' + self.pathToDisk)
         self.startLoadingAnimation()
         guest = self.createGuestFSHandler()
@@ -530,7 +530,7 @@ class VMIManagerDNF(VMIManager):
         self.shutdownGuestFSHandler(guest)
         self.stopLoadingAnimation()
 
-    def removeUserDir(self):
+    def removeHomeDir(self):
         print ('\n=== Remove Userfolder from VMI: ' + self.pathToDisk)
         self.startLoadingAnimation()
         guest = self.createGuestFSHandler()

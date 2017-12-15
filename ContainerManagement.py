@@ -20,7 +20,7 @@ class AppContainerizationUbuntu:
         self.local_relPath_DockerfilePath = self.local_relPath_DockerfileFolder + "/Dockerfile"
         self.appName = appName
         self.imageName = "img_" + appName
-        self.containerName = "container_" + appName
+        self.containerName = "container1_" + appName
         self.forceNew=forceNew
         self.userName=userName
         self.gui = gui
