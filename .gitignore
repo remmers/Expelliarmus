@@ -4,3 +4,4 @@ DockerHomeFolders/*
 VMI_UserfolderBackups/*
 .dockerignore
 tempRepository
+data
