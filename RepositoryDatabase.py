@@ -34,6 +34,7 @@ class RepositoryDatabase:
               pkgID         INTEGER PRIMARY KEY AUTOINCREMENT,
               name          TEXT    NOT NULL,
               version       TEXT    NOT NULL,
+              architecture  TEXT    NOT NULL,
               distribution  TEXT    NOT NULL,
               filename      TEXT    NOT NULL)
         ''')
@@ -57,7 +58,7 @@ class RepositoryDatabase:
         ''')
         self.db.commit()
 
-    def packageExists(self, name, version, distribution):
+    def packageExists(self, name, version, arch, distribution):
         """
         Checks if specific Package exists in database
         :param name:
@@ -73,8 +74,9 @@ class RepositoryDatabase:
             SELECT filename FROM PackageRepository
             WHERE name=?
             AND version=?
+            AND architecture=?
             AND distribution=?''',
-            (name,version,distribution)
+            (name,version,arch,distribution)
         )
         result = self.cursor.fetchall()
         if len(result) == 0:
@@ -83,13 +85,13 @@ class RepositoryDatabase:
             return True
         else:
             print "ERROR in Repository: multiple lines in table PackageRepository\n" \
-                  "Search for name=%s, version=%s, distribution=%s\n" \
-                  "Result:" % (name, version, distribution)
+                  "Search for name=%s, version=%s, architecture=%s, distribution=%s\n" \
+                  "Result:" % (name, version, arch, distribution)
             for row in result:
                 print "\t" + row[0]
             return True
 
-    def getPackageID(self, pkgName, version, distribution):
+    def getPackageID(self, pkgName, version, arch, distribution):
         """
         Returns filename of package if exists, otherwise None
         :param pkgName:
@@ -103,9 +105,10 @@ class RepositoryDatabase:
                 SELECT pkgID FROM PackageRepository
                 WHERE name=?
                 AND version=?
+                AND architecture=?
                 AND distribution=?
             ''',
-            (pkgName, version, distribution)
+            (pkgName, version, arch, distribution)
         )
         result = self.cursor.fetchall()
         if len(result) == 0:
@@ -114,7 +117,7 @@ class RepositoryDatabase:
             return result[0][0]
         else:
             print("ERROR in database: multiple packages with same name, version and distribution exist:\n" \
-                "\tSearch for name=" + pkgName + ", version=" + version + ", distribution=" + distribution + " results in:\n" \
+                "\tSearch for name=" + pkgName + ", version=" + version + ", architecture="+arch+"distribution=" + distribution + " results in:\n" \
                 "\t" + str(result) + "\n" \
                 "\tsolve manually!")
             return result[0][0]
@@ -153,7 +156,7 @@ class RepositoryDatabase:
         else:
             return result[0][0]
 
-    def getPackageFileName(self, pkgName, version, distribution):
+    def getPackageFileName(self, pkgName, version, arch, distribution):
         """
         Returns filename of package if exists, otherwise None
         :param pkgName:
@@ -167,8 +170,9 @@ class RepositoryDatabase:
             SELECT filename FROM PackageRepository
             WHERE name=?
             AND version=?
+            AND architecture=?
             AND distribution=?''',
-            (pkgName, version, distribution)
+            (pkgName, version, arch, distribution)
         )
         result = self.cursor.fetchall()
         if len(result) == 0:
@@ -177,12 +181,12 @@ class RepositoryDatabase:
             return result[0][0]
         else:
             print("ERROR in database: multiple packages with same name, version and distribution exist:\n" \
-                "\tSearch for name=" + pkgName + ", version=" + version + ", distribution=" + distribution + " results in:\n" \
+                "\tSearch for name=" + pkgName + ", version=" + version + ", architecture="+arch+", distribution=" + distribution + " results in:\n" \
                 "\t" + str(result) + "\n" \
                 "\tsolve manually!")
             return result[0][0]
 
-    def tryAddPackage(self, name, version, distribution, filename):
+    def tryAddPackage(self, name, version, arch, distribution, filename):
         """
             tries to add Package and returns pkgID, if package already exists, pkgID is also returned
         :param name:
@@ -195,10 +199,11 @@ class RepositoryDatabase:
                 SELECT pkgID FROM PackageRepository
                 WHERE name=?
                 AND version=?
+                AND architecture=?
                 AND distribution=?
                 AND filename=?
             ''',
-            (name, version, distribution, filename)
+            (name, version, arch, distribution, filename)
         )
         result = self.cursor.fetchall()
         if len(result) > 1:
@@ -210,26 +215,17 @@ class RepositoryDatabase:
         else:
             # Insert new package
             self.cursor.execute('''
-                    INSERT INTO PackageRepository (name,version,distribution,filename)
-                    VALUES (?,?,?,?)''',
-                    (name,version, distribution,filename))
+                    INSERT INTO PackageRepository (name,version,architecture,distribution,filename)
+                    VALUES (?,?,?,?,?)''',
+                    (name,version,arch,distribution,filename))
             self.db.commit()
             # Return id
-            self.cursor.execute('''
-                SELECT pkgID FROM PackageRepository
-                WHERE name=?
-                AND version=?
-                AND distribution=?
-                AND filename=?''',
-                (name, version, distribution, filename)
-            )
-            result = self.cursor.fetchall()
-            return result[0][0]
+            return self.getPackageID(name,version,arch,distribution)
 
     def addPackageList(self, packageList):
         self.cursor.executemany('''
-                      INSERT INTO PackageRepository(name, version, distribution, filename)
-                      VALUES(?,?,?,?)
+                      INSERT INTO PackageRepository(name, version, architecture, distribution, filename)
+                      VALUES(?,?,?,?,?)
                   ''', packageList)
         self.db.commit()
 
@@ -307,7 +303,7 @@ class RepositoryDatabase:
         :param distribution:
         :param arch:
         :param vmiFilename:
-        :param packageDict: dict(pkgName,(version,filename)) ,NOTE: filename only if package newly downloaded, otherwise None
+        :param packageDict: dict(pkgName,(version,arch,filename)) ,NOTE: filename only if package newly downloaded, otherwise None
         :return:
         """
 
@@ -317,24 +313,27 @@ class RepositoryDatabase:
         # (Add and) obtain id of main package / application
         appInfo = packageDict[appName]
         appVersion = appInfo[0]
-        appFileName = appInfo[1]
+        appArch = appInfo [1]
+        appFileName = appInfo[2]
         if appVersion == None:
             sys.exit("ERROR in database: no version for application " + appName + " received!")
+        if appArch == None:
+            sys.exit("ERROR in database: no architecture for application " + appName + " received!")
         # package already exists in repo
         if appFileName == None:
-            appID = self.getPackageID(appName,appVersion,distribution)
+            appID = self.getPackageID(appName,appVersion,appArch,distribution)
         # package has to be added
         else:
-            appID = self.tryAddPackage(appName, appVersion, distribution, appFileName)
+            appID = self.tryAddPackage(appName, appVersion, appArch, distribution, appFileName)
 
         # Create list of all packages required by application (dependencies) and list of new packages; isolate application info
-        packageListDep = []  # [(vmiID,pkgID,deppkgName, deppkgVersion, deppkgDistribution)]
-        packageListNew = []  # [(deppkgName, deppkgVersion, deppkgDistribution,filename)]
+        packageListDep = []  # [(vmiID,pkgID,deppkgName, deppkgVersion, deppkgArch, deppkgDistribution)]
+        packageListNew = []  # [(deppkgName, deppkgVersion, deppkgArch, deppkgDistribution, filename)]
         for pkgName,pkgInfo in packageDict.iteritems():
             if pkgName != appName:                                                      # main application already added and not a dependency of itself
-                packageListDep.append((vmiID,appID, pkgName, pkgInfo[0], distribution)) # all others are dependencies of package
-                if pkgInfo[1] != None:                                                  # filename exists => package has to be added
-                    packageListNew.append((pkgName, pkgInfo[0], distribution, pkgInfo[1]))
+                packageListDep.append((vmiID,appID, pkgName, pkgInfo[0], pkgInfo[1], distribution)) # all others are dependencies of package
+                if pkgInfo[2] != None:                                                  # filename exists => package has to be added
+                    packageListNew.append((pkgName, pkgInfo[0], pkgInfo[1], distribution, pkgInfo[2]))
 
         # Add new packages to database
         if len(packageListNew)>0:
@@ -363,6 +362,7 @@ class RepositoryDatabase:
                               VALUES (?, ?, (SELECT pkgID FROM PackageRepository
                                     WHERE name=?
                                     AND version=?
+                                    AND architecture=?
                                     AND distribution=?))
                           ''', (depList))
         self.db.commit()

@@ -298,14 +298,21 @@ class VMIManagerAPT(VMIManager):
         packageSet.add(applicationName)
 
         # Obtain versions for each package
-        packageversions = guest.sh(
-            "printf '" + ",".join(packageSet) + "' | xargs -I _ -d ',' sh -c \"echo _,\$(apt-cache policy _ | grep '  Installed: ' | sed -e 's/  Installed: //')\"")
-
-        # store in dict a la {pkg:(version,filename)} => e.g. {curl:(1.1,None)}
+        packageInfo = guest.sh(
+            #"printf '" + ",".join(packageSet) + "' | xargs -I _ -d ',' sh -c \"echo _,\$(dpkg -s _ | grep 'Version:' | sed -e 's/Version: //'),\$(dpkg -s _ | grep 'Architecture:' | sed -e 's/Architecture: //')\"")
+            "printf '" + ",".join(packageSet) + "" \
+                "' | xargs -I _ -d ',' sh -c \"" \
+                        "echo _," \
+                        "\$(dpkg -s _ | grep 'Version:' | sed -e 's/Version: //')," \
+                        "\$(dpkg -s _ | grep 'Architecture:' | sed -e 's/Architecture: //')"\
+                "\"")   # results in lines of form pkgName,pkgVersion,pkgArchitecture
         packageDict = dict()
-        for line in packageversions.split("\n")[:-1]:
+        # store in dict a la {pkg:(version,arch,filename)} => e.g. {curl:(1.1,amd64,None)}
+        for line in packageInfo.split("\n")[:-1]:
+            if list == "":
+                pass
             lineData = line.split(",")
-            packageDict[lineData[0]] = (lineData[1],None)
+            packageDict[lineData[0]] = (lineData[1],lineData[2],None)
 
         numAllPackages = len(packageDict)
 
@@ -313,7 +320,7 @@ class VMIManagerAPT(VMIManager):
         packageListToDownload = []
         with RepositoryDatabase(forceNew=False) as repoManager:
             for pkg,pkgInfo in packageDict.iteritems():
-                if not repoManager.packageExists(pkg,pkgInfo[0],self.distribution):
+                if not repoManager.packageExists(pkg,pkgInfo[0],pkgInfo[1],self.distribution):
                     packageListToDownload.append(pkg)
 
         numReqPackages = len(packageListToDownload)
@@ -344,7 +351,7 @@ class VMIManagerAPT(VMIManager):
                     lineData = line.split("'")
                     pkgName = lineData[1]
                     pkgFileName = self.local_packageFolder + "/" + lineData[3][2:]
-                    packageDict[pkgName] = (packageDict[pkgName][0],pkgFileName)
+                    packageDict[pkgName] = (packageDict[pkgName][0],packageDict[pkgName][1],pkgFileName)
 
         # Update Repository Database
         with RepositoryDatabase() as repoManager:
@@ -368,7 +375,7 @@ class VMIManagerAPT(VMIManager):
                     if pkgName in self.installedPackagesDict and (pkgArch == self.installedPackagesDict[pkgName] or self.installedPackagesDict[pkgName]=="all"):
                         self.dependencySet.add(pkgName)
                     #else:
-                        #print "Dependency List: %s was not added to dependencySet (architecture did not match)" % pkgInfo
+                    #    print "Dependency List: %s was not added to dependencySet (architecture did not match)" % pkgInfo
                 elif pkgName in self.installedPackagesDict:
                     self.dependencySet.add(pkgName)
                 #else:
