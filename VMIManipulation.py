@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import itertools
 import threading
@@ -8,17 +9,21 @@ import tarfile
 from abc import ABCMeta, abstractmethod
 import subprocess
 from RepositoryDatabase import RepositoryDatabase
+from VMIGraph import VMIGraph
+
 
 class VMIManipulator:
     __metaclass__ = ABCMeta
     @abstractmethod
-    def __init__(self, pathToDisk, distribution, arch):
-        self.local_relPathToVMI = pathToDisk
+    def __init__(self, pathToVMI, vmiName, distribution, arch, guest):
+        self.guest = guest
+        self.local_relPathToVMI = pathToVMI
+        self.vmiName = vmiName
         self.distribution = distribution
         self.vmi_arch = arch
         self.vmi_name = self.local_relPathToVMI.split("/")[-1]
         self.local_currentDir = os.path.dirname(os.path.realpath(__file__))
-        self.local_absPathToVMI = self.local_currentDir + '/' + pathToDisk
+        self.local_absPathToVMI = self.local_currentDir + '/' + pathToVMI
         self.local_generalPackageFolder = "packages"
         self.local_repoConfigFolder = "RepoConfigFiles"
         self.localUserBackupFolder = "VMI_UserfolderBackups"
@@ -28,45 +33,19 @@ class VMIManipulator:
         self.checkMainFolderExistence()
 
     @staticmethod
-    def getVMIManipulator(diskname):
-        print ('\n=== Creating VMIManipulator for disk: \"' + diskname + '\"')
-        guest = guestfs.GuestFS(python_return_dict=True)
-        guest.add_drive_opts(diskname, readonly=False)
-        guest.launch()
-
-        # Obtain root filesystem that contains the OS
-        roots = guest.inspect_os()
-        if len(roots) == 0:
-            raise (Exception("inspect_vm: no operating systems found"))
-        if len(roots) > 1:
-            raise (Exception("inspect_vm: more than one operating system found"))
-        root = roots[0]
-
-        # Obtain and try to mount all required filesystems associated with OS
-        mps = guest.inspect_get_mountpoints(root)
-        for device in sorted(mps.keys(), VMIManipulator.compare):
-            try:
-                guest.mount(mps[device], device)
-            except RuntimeError as msg:
-                print "%s (ignored)" % msg
+    def getVMIManipulator(pathToVMI, vmiName, guest, root):
+        #print ('Creating VMIManipulator for disk: \"' + pathToVMI + '\"')
 
         pkgManager  = guest.inspect_get_package_management(root)
         distro      = guest.inspect_get_distro(root)
         arch        = guest.inspect_get_arch(root)
-
-        guest.umount_all()
-        guest.shutdown()
-
+        '''print "VMIManipulatorAPT"
+        print "Distribution:\t\t" + distro
+        print "Package Management:\t" + pkgManager'''
         if pkgManager == "apt":
-            print "VMIManipulatorAPT"
-            print "Distribution:\t\t" + distro
-            print "Package Management:\t" + pkgManager
-            return VMIManipulatorAPT(diskname, distro, arch)
+            return VMIManipulatorAPT(pathToVMI, vmiName, distro, arch, guest)
         elif pkgManager == "dnf":
-            print "VMIManipulatorDNF"
-            print "Distribution:\t\t" + distro
-            print "Package Management:\t" + pkgManager
-            return VMIManipulatorDNF(diskname, distro, arch)
+            return VMIManipulatorDNF(pathToVMI, vmiName, distro, arch, guest)
         else:
             raise (Exception("VMI's Package Management \"" + pkgManager + "\" is not supported."))
 
@@ -79,13 +58,13 @@ class VMIManipulator:
             os.mkdir(self.localUserBackupFolder)
 
     @abstractmethod
-    def exportApplication(self, applicationName):pass
+    def exportPackages(self, packageDict):pass
 
     @abstractmethod
-    def importApplication(self, applicationName):pass
+    def importPackages(self, mainServices, filenames):pass
 
     @abstractmethod
-    def removeApplication(self, applicationName):pass
+    def removePackages(self, packageList):pass
 
     @abstractmethod
     def exportHomeDir(self): pass
@@ -99,33 +78,6 @@ class VMIManipulator:
     @staticmethod
     def compare(a, b):
         return len(a) - len(b)
-
-    def createGuestFSHandler(self):
-        guest = guestfs.GuestFS(python_return_dict=True)
-        guest.add_drive_opts(self.local_relPathToVMI, readonly=False)
-        guest.launch()
-
-        # Obtain root filesystem that contains the OS
-        roots = guest.inspect_os()
-        if len(roots) == 0:
-            raise (Exception("inspect_vm: no operating systems found"))
-        if len(roots) > 1:
-            raise (Exception("inspect_vm: more than one operating system found"))
-        root = roots[0]
-
-        # Obtain and try to mount all required filesystems associated with OS
-        mps = guest.inspect_get_mountpoints(root)
-        for device in sorted(mps.keys(), self.compare):
-            try:
-                guest.mount(mps[device], device)
-            except RuntimeError as msg:
-                print "%s (ignored)" % msg
-
-        return guest
-
-    def shutdownGuestFSHandler(self, guest):
-        guest.umount_all()
-        guest.shutdown()
 
     def pkgExists(self, pkg):
         if pkg == "filesystem":
@@ -206,235 +158,108 @@ class VMIManipulator:
         sys.stdout.flush()
 
 class VMIManipulatorAPT(VMIManipulator):
-    def __init__(self, pathToDisk, distribution, arch):
-        super(VMIManipulatorAPT, self).__init__(pathToDisk, distribution, arch)
+    def __init__(self, pathToVMI, vmiName, distribution, arch, guest):
+        super(VMIManipulatorAPT, self).__init__(pathToVMI, vmiName, distribution, arch, guest)
         self.local_packageFolder = self.local_generalPackageFolder + "/" + self.distribution
         self.vmi_tmpSourceConfigPath = "/etc/apt/sources.list.d/tempRepo.list"
         self.localSourcesFile = self.local_repoConfigFolder + "/DEB_temprepository.list"
         self.vmi_UserFolder = "/home"
-        self.localUserBackupPath = self.localUserBackupFolder + "/userfolder_" + pathToDisk.split(".")[0] + ".tar"
+        self.localUserBackupPath = self.localUserBackupFolder + "/userfolder_" + pathToVMI.split(".")[0] + ".tar"
         self.checkFolderExistence()
 
     def checkFolderExistence(self):
         if not os.path.isdir(self.local_packageFolder):
             os.mkdir(self.local_packageFolder)
 
-
-    def exportApplicationOLD(self, applicationName):
-        print ('\n=== Export ' + applicationName + ' from VMI: ' + self.local_relPathToVMI)
-
-        guest = self.createGuestFSHandler()
-
-        # Obtain dependency list first (checks if application is installed after all)
-        packageSet = self.getDependencySetFromVMI(guest, applicationName)
-        packageSet.add(applicationName)
-
-        # Obtain versions for each package
-        packageversions = guest.sh(
-            "printf '" + ",".join(packageSet) + "' | xargs -I _ -d ',' sh -c \"echo _,\$(apt-cache policy _ | grep '  Installed: ' | sed -e 's/  Installed: //')\"")
-
-        # store in dict a la {pkg:(version,filename)} => e.g. {curl:(1.1,None)}
-        packageDict = dict()
-        for line in packageversions.split("\n")[:-1]:
-            lineData = line.split(",")
-            packageDict[lineData[0]] = (lineData[1],None)
-
-        numAllPackages = len(packageDict)
-
-        # Remove packages that already exist in host repository
-        packageListToDownload = []
-        with RepositoryDatabase(forceNew=False) as repoManager:
-            for pkg,pkgInfo in packageDict.iteritems():
-                if not repoManager.packageExists(pkg,pkgInfo[0],self.distribution):
-                    packageListToDownload.append(pkg)
-
-        numReqPackages = len(packageListToDownload)
-        print "Package Export:\n\t%i packages required\n\t%i already exist in local repository\n\t%i packages to be exported!" % (numAllPackages, numAllPackages-numReqPackages,numReqPackages)
+    def exportPackages(self, packageDict):
+        """
+            :param dict() packageDict:
+            # in the form of {pkg,{name:"pkg", version:"1.1", architecture:"amd64", essential:False}}
+            :return list() packageInfoList:
+            # in the form of [(name, version, architecture, distribution, filename)]
+        """
+        patternPkgName = r"([^'`]*)"
+        patternFileName = r"./([^'`]*)"
+        depMatcher = re.compile(r"^dpkg-deb: building package ['`]"+patternPkgName+"['`] in ['`]"+patternFileName+"['`].$")
+        numPackages = len(packageDict)
+        packageInfoList = list()
 
         # check if any packages have to be exported at all
-        if (numReqPackages > 0):
+        if (numPackages > 0):
             try:
-            # Repackage in guest
-                guest.mkdir(self.vmi_repackagingFolder)
+                # Repackage in guest
+                self.guest.mkdir(self.vmi_repackagingFolder)
             except:
                 print "\tExisting folder %s in VMI will be replaced" % self.vmi_repackagingFolder
-                guest.rm_rf(self.vmi_repackagingFolder)
-                guest.mkdir(self.vmi_repackagingFolder)
-            print "\tStarting to repackage and export " + str(numReqPackages) + " package(s)."
-            packageFileNames = guest.sh("cd /var/exportpackages && fakeroot -u dpkg-repack " + " ".join(packageListToDownload))
+                self.guest.rm_rf(self.vmi_repackagingFolder)
+                self.guest.mkdir(self.vmi_repackagingFolder)
+            print "\tStarting to repackage and export " + str(numPackages) + " package(s)."
+            packageFileNames = self.guest.sh(
+                "cd /var/exportpackages && fakeroot -u dpkg-repack " + " ".join(packageDict.keys()))
 
-            # Download and extract packages
-            localpackagesFilePath = self.local_packageFolder + "/" + applicationName + "Packages.tar"
-            guest.tar_out(self.vmi_repackagingFolder, localpackagesFilePath)
+            # Download and extract packages, delete temp folder in guest
+            localpackagesFilePath = self.local_packageFolder + "/" + self.vmi_name + "Packages.tar"
+            self.guest.tar_out(self.vmi_repackagingFolder, localpackagesFilePath)
+            self.guest.rm_rf(self.vmi_repackagingFolder)
             with tarfile.open(localpackagesFilePath) as tar:
                 tar.extractall(path=self.local_packageFolder)
             os.remove(localpackagesFilePath)
 
             # save filename information of packages
             for line in packageFileNames.split("\n"):
-                if line.startswith("dpkg-deb: building package"):
-                    lineData = line.split("'")
-                    pkgName = lineData[1]
-                    pkgFileName = self.local_packageFolder + "/" + lineData[3][2:]
-                    packageDict[pkgName] = (packageDict[pkgName][0],pkgFileName)
+                matchResult = depMatcher.match(line)
+                if matchResult:
+                    pkgName = matchResult.group(1)
+                    pkgFileName = matchResult.group(2)
+                    pkgNewpath = self.local_packageFolder + "/" + pkgFileName
+                    packageInfoList.append((pkgName,
+                                            packageDict[pkgName][VMIGraph.GNodeAttrVersion],
+                                            packageDict[pkgName][VMIGraph.GNodeAttrArchitecture],
+                                            self.distribution,
+                                            pkgNewpath))
 
-        # Update Repository Database
-        with RepositoryDatabase() as repoManager:
-            repoManager.addApplicationForVMI(self.vmi_name, self.distribution, self.vmi_arch, self.local_relPathToVMI, applicationName, packageDict)
+        print "\t" + str(len(packageInfoList)) + " package(s) exported"
+        return packageInfoList
 
-        print "\t" + str(numReqPackages) + " package(s) exported"
-        guest.rm_rf(self.vmi_repackagingFolder)
+    def importPackages(self, mainServices, filenames):
 
-        self.shutdownGuestFSHandler(guest)
+        # check if installation necessary
+        if len(mainServices) > 0:
+            # prepare tarfile with compressed packages for import
+            localpackagesFilePath = self.local_packageFolder + "/" + self.vmiName + "Packages.tar"
+            with tarfile.open(localpackagesFilePath, mode='w') as tar:
+                for pkgFileName in filenames:
+                    tar.add(pkgFileName)
 
-    def exportApplication(self, applicationName):
-        print ('\n=== Export ' + applicationName + ' from VMI: ' + self.local_relPathToVMI)
-
-        guest = self.createGuestFSHandler()
-
-        # Obtain dependency list first (checks if application is installed after all)
-        packageSet = self.getDependencySetFromVMI(guest, applicationName)
-        packageSet.add(applicationName)
-
-        # Obtain versions for each package
-        packageInfo = guest.sh(
-            #"printf '" + ",".join(packageSet) + "' | xargs -I _ -d ',' sh -c \"echo _,\$(dpkg -s _ | grep 'Version:' | sed -e 's/Version: //'),\$(dpkg -s _ | grep 'Architecture:' | sed -e 's/Architecture: //')\"")
-            "printf '" + ",".join(packageSet) + "" \
-                "' | xargs -I _ -d ',' sh -c \"" \
-                        "echo _," \
-                        "\$(dpkg -s _ | grep 'Version:' | sed -e 's/Version: //')," \
-                        "\$(dpkg -s _ | grep 'Architecture:' | sed -e 's/Architecture: //')"\
-                "\"")   # results in lines of form pkgName,pkgVersion,pkgArchitecture
-        packageDict = dict()
-        # store in dict a la {pkg:(version,arch,filename)} => e.g. {curl:(1.1,amd64,None)}
-        for line in packageInfo.split("\n")[:-1]:
-            if list == "":
-                pass
-            lineData = line.split(",")
-            packageDict[lineData[0]] = (lineData[1],lineData[2],None)
-
-        numAllPackages = len(packageDict)
-
-        # Remove packages that already exist in host repository
-        packageListToDownload = []
-        with RepositoryDatabase(forceNew=False) as repoManager:
-            for pkg,pkgInfo in packageDict.iteritems():
-                if not repoManager.packageExists(pkg,pkgInfo[0],pkgInfo[1],self.distribution):
-                    packageListToDownload.append(pkg)
-
-        numReqPackages = len(packageListToDownload)
-        print "Package Export:\n\t%i packages required\n\t%i already exist in local repository\n\t%i packages to be exported!" % (numAllPackages, numAllPackages-numReqPackages,numReqPackages)
-
-        # check if any packages have to be exported at all
-        if (numReqPackages > 0):
+            # Upload packages to temporary repository
             try:
-            # Repackage in guest
-                guest.mkdir(self.vmi_repackagingFolder)
+                self.guest.mkdir(self.vmi_repoFolder)
             except:
-                print "\tExisting folder %s in VMI will be replaced" % self.vmi_repackagingFolder
-                guest.rm_rf(self.vmi_repackagingFolder)
-                guest.mkdir(self.vmi_repackagingFolder)
-            print "\tStarting to repackage and export " + str(numReqPackages) + " package(s)."
-            packageFileNames = guest.sh("cd /var/exportpackages && fakeroot -u dpkg-repack " + " ".join(packageListToDownload))
+                print "\"" + self.vmi_repoFolder + "\" already exist in guest. Proceeding anyway."
+            self.guest.tar_in(localpackagesFilePath, self.vmi_repoFolder)
 
-            # Download and extract packages
-            localpackagesFilePath = self.local_packageFolder + "/" + applicationName + "Packages.tar"
-            guest.tar_out(self.vmi_repackagingFolder, localpackagesFilePath)
-            with tarfile.open(localpackagesFilePath) as tar:
-                tar.extractall(path=self.local_packageFolder)
+            # Upload temporary sources.list
+            self.guest.upload(self.localSourcesFile, self.vmi_tmpSourceConfigPath)
+
+            # Rename default .list
+            self.guest.rename("/etc/apt/sources.list", "/etc/apt/sources.list2")
+
+            # Installing package
+            self.guest.sh("cd /var/tempRepository && dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz \
+                                && apt-get update \
+                                && apt-get install " + ",".join(mainServices) + " -y --allow-unauthenticated")
+
+            # Remove temporary repository
+            self.guest.rm_rf(self.vmi_repoFolder)
+
+            # Remove temporary sources.list
+            self.guest.rm(self.vmi_tmpSourceConfigPath)
+
+            # Rename default .list
+            self.guest.rename("/etc/apt/sources.list2", "/etc/apt/sources.list")
+
+            # Remove temporary tarfile
             os.remove(localpackagesFilePath)
-
-            # save filename information of packages
-            for line in packageFileNames.split("\n"):
-                if line.startswith("dpkg-deb: building package"):
-                    lineData = line.split("'")
-                    pkgName = lineData[1]
-                    pkgFileName = self.local_packageFolder + "/" + lineData[3][2:]
-                    packageDict[pkgName] = (packageDict[pkgName][0],packageDict[pkgName][1],pkgFileName)
-
-        # Update Repository Database
-        with RepositoryDatabase() as repoManager:
-            repoManager.addApplicationForVMI(self.vmi_name, self.distribution, self.vmi_arch, self.local_relPathToVMI, applicationName, packageDict)
-
-        print "\t" + str(numReqPackages) + " package(s) exported"
-        guest.rm_rf(self.vmi_repackagingFolder)
-
-        self.shutdownGuestFSHandler(guest)
-
-    def getDependencySetFromVMI(self, guest, applicationName):
-        class DependencySetHelper:
-            def __init__(self, installedPackagesDict):
-                self.installedPackagesDict = installedPackagesDict
-                self.dependencySet = set()
-            def tryadd(self, pkgInfo):
-                pkgInfoList = pkgInfo.split(":")
-                pkgName = pkgInfoList[0]
-                if len(pkgInfoList) == 2:
-                    pkgArch = pkgInfoList[1]
-                    if pkgName in self.installedPackagesDict and (pkgArch == self.installedPackagesDict[pkgName] or self.installedPackagesDict[pkgName]=="all"):
-                        self.dependencySet.add(pkgName)
-                    #else:
-                    #    print "Dependency List: %s was not added to dependencySet (architecture did not match)" % pkgInfo
-                elif pkgName in self.installedPackagesDict:
-                    self.dependencySet.add(pkgName)
-                #else:
-                    #print "Dependency List: %s was not added to dependencySet (not installed)" % pkgName
-
-        # Create Dictionary of installed packages with mapping: name -> arch
-        installedPkgsDict = {}
-        for line in guest.sh("dpkg-query --show --showformat='${Package};${Architecture}\\n'")[:-1].split("\n"):
-            line = line.split(";")
-            installedPkgsDict[line[0]] = line[1]
-
-        if not applicationName in installedPkgsDict:
-            sys.exit("ERROR: %s is not installed in VMI!" % applicationName)
-
-        fullDepList = guest.sh("apt-cache depends \
-                                --recurse --important "
-                                 + applicationName).split("\n")
-        reducedDepSetHelper = DependencySetHelper(installedPkgsDict)
-        reducedDepSetHelper.tryadd(applicationName)
-        i = 0
-        length = len(fullDepList)
-        while i<length:
-            # if virtual package, add all installed packages that realize the virtual package
-            if fullDepList[i].startswith("  Depends: <") or fullDepList[i].startswith(" |Depends: <"):
-                i = i+1
-                while (i<length and fullDepList[i].startswith("    ")):
-                    reducedDepSetHelper.tryadd(fullDepList[i][4:])
-                    i = i+1
-            # if virtual package, add all installed packages that realize the virtual package
-            elif fullDepList[i].startswith("  PreDepends: <") or fullDepList[i].startswith(" |PreDepends: <"):
-                i = i+1
-                while (i<length and fullDepList[i].startswith("    ")):
-                    reducedDepSetHelper.tryadd(fullDepList[i][4:])
-                    i = i+1
-            # if dependent on package, add package and ignore all following indented packages
-            elif fullDepList[i].startswith("  Depends: ") or fullDepList[i].startswith(" |Depends: "):
-                reducedDepSetHelper.tryadd(fullDepList[i][11:])
-                i = i+1
-                while (i<length and fullDepList[i].startswith("    ")):
-                    i = i+1
-            # if predependent on package, add package and ignore all following indented packages
-            elif fullDepList[i].startswith("  PreDepends: ") or fullDepList[i].startswith(" |PreDepends: "):
-                reducedDepSetHelper.tryadd(fullDepList[i][14:])
-                i = i + 1
-                while (i<length and fullDepList[i].startswith("    ")):
-                    i = i + 1
-            elif not fullDepList[i].startswith(" "):
-                #if package not installed, ignore all related packages
-                if not fullDepList[i] in installedPkgsDict:
-                    i = i + 1
-                    while (i<length and fullDepList[i].startswith(" ")):
-                        i = i + 1
-                # package is installed, thus add and check related packages
-                else:
-                    reducedDepSetHelper.tryadd(fullDepList[i])
-                    i=i+1
-            else:
-                print "WARNING: Line ("+str(i)+") \"" + fullDepList[i] + "\" was not processed."
-                i=i+1
-        return reducedDepSetHelper.dependencySet
 
     def importApplication(self, applicationName):
         print ('\n=== Import ' + applicationName + ' to VMI: ' + self.local_relPathToVMI)
@@ -448,78 +273,70 @@ class VMIManipulatorAPT(VMIManipulator):
             for pkgFileName in packageFileNames:
                 tar.add(pkgFileName)
 
-        guest = self.createGuestFSHandler()
-
         # Upload packages to temporary repository
         try:
-            guest.mkdir(self.vmi_repoFolder)
+            self.guest.mkdir(self.vmi_repoFolder)
         except:
             print "\"" + self.vmi_repoFolder + "\" already exist in guest. Proceeding anyway."
-        guest.tar_in(localpackagesFilePath, self.vmi_repoFolder)
+        self.guest.tar_in(localpackagesFilePath, self.vmi_repoFolder)
 
         # Upload temporary sources.list
-        guest.upload(self.localSourcesFile, self.vmi_tmpSourceConfigPath)
+        self.guest.upload(self.localSourcesFile, self.vmi_tmpSourceConfigPath)
 
         # Rename default .list
-        guest.rename("/etc/apt/sources.list", "/etc/apt/sources.list2")
+        self.guest.rename("/etc/apt/sources.list", "/etc/apt/sources.list2")
 
         # Installing package
-        guest.sh("cd /var/tempRepository && dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz \
+        self.guest.sh("cd /var/tempRepository && dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz \
                     && apt-get update \
                     && apt-get install " + applicationName + " -y --allow-unauthenticated")
 
         # Remove temporary repository
-        guest.rm_rf(self.vmi_repoFolder)
+        self.guest.rm_rf(self.vmi_repoFolder)
 
         # Remove temporary sources.list
-        guest.rm(self.vmi_tmpSourceConfigPath)
+        self.guest.rm(self.vmi_tmpSourceConfigPath)
 
         # Rename default .list
-        guest.rename("/etc/apt/sources.list2", "/etc/apt/sources.list")
-
-        self.shutdownGuestFSHandler(guest)
+        self.guest.rename("/etc/apt/sources.list2", "/etc/apt/sources.list")
 
         # Remove temporary tarfile
         os.remove(localpackagesFilePath)
 
-    def removeApplication(self, applicationName):
-        print ('\n=== Remove ' + applicationName + ' from VMI: ' + self.local_relPathToVMI)
-        guest = self.createGuestFSHandler()
-        print guest.sh("apt-get purge --auto-remove -y " + applicationName)
-        self.shutdownGuestFSHandler(guest)
+    def removePackages(self, packageList):
+        """
+            removes main services and other orphaned packages
+        :param packageList: packages to remove (main services)
+        :return: list of packages that have been removed
+        """
+        self.guest.sh("apt-get purge --auto-remove -y " + " ".join(packageList))
 
     def exportHomeDir(self):
-        print ('\n=== Export Userfolder from VMI: ' + self.local_relPathToVMI)
+        print ('\nExport Userfolder from VMI: ' + self.local_relPathToVMI)
         if os.path.isfile(self.localUserBackupPath):
-            print "Existing user folder in " + self.localUserBackupPath + " will be replaced."
+            print "\tExisting user folder in " + self.localUserBackupPath + " will be replaced."
             os.remove(self.localUserBackupPath)
-        guest = self.createGuestFSHandler()
-        guest.tar_out(self.vmi_UserFolder, self.localUserBackupPath)
-        self.shutdownGuestFSHandler(guest)
+        self.guest.tar_out(self.vmi_UserFolder, self.localUserBackupPath)
 
     def importHomeDir(self):
-        print ('\n=== Import Userfolder to VMI: ' + self.local_relPathToVMI)
-        guest = self.createGuestFSHandler()
-        if guest.exists(self.vmi_UserFolder):
+        print ('\nImport Userfolder to VMI: ' + self.local_relPathToVMI)
+        if self.guest.exists(self.vmi_UserFolder):
             print "Existing user folder in " + self.local_relPathToVMI + " will be replaced."
-            guest.rm_rf(self.vmi_UserFolder)
-        guest.mkdir(self.vmi_UserFolder)
-        guest.tar_in(self.localUserBackupPath, self.vmi_UserFolder)
-        self.shutdownGuestFSHandler(guest)
+            self.guest.rm_rf(self.vmi_UserFolder)
+        self.guest.mkdir(self.vmi_UserFolder)
+        self.guest.tar_in(self.localUserBackupPath, self.vmi_UserFolder)
 
     def removeHomeDir(self):
-        print ('\n=== Remove Userfolder from VMI: ' + self.local_relPathToVMI)
-        guest = self.createGuestFSHandler()
-        guest.rm_rf(self.vmi_UserFolder)
-        guest.umount_all()
-        guest.shutdown()
+        print ('\nRemove Userfolder from VMI: ' + self.local_relPathToVMI)
+        self.guest.rm_rf(self.vmi_UserFolder)
+        self.guest.umount_all()
 
 class VMIManipulatorDNF(VMIManipulator):
-    def __init__(self, pathToDisk, distribution, arch):
-        super(VMIManipulatorDNF, self).__init__(pathToDisk, distribution, arch)
+    def __init__(self, pathToVMI, vmiName, distribution, arch, guest):
+        super(VMIManipulatorDNF, self).__init__(pathToVMI, vmiName, distribution, arch, guest)
         self.local_packageFolder    = self.local_generalPackageFolder + "/" + self.distribution
         self.localSourcesFile       = self.local_repoConfigFolder + "/RPM_temprepository.repo"
-        self.localUserBackupPath    = self.localUserBackupFolder + "/userfolder_" + pathToDisk.split(".")[0] + ".tar"
+        self.localUserBackupPath    = self.localUserBackupFolder + "/userfolder_" + pathToVMI.split(".")[0] + ".tar"
         self.vmi_sourcesFolderPath  = "/etc/yum.repos.d/"
         self.vmi_tmpSourceConfigPath= "/etc/yum.repos.d/tempRepo.repo"
         self.vmi_UserFolder = "/home"
@@ -534,17 +351,15 @@ class VMIManipulatorDNF(VMIManipulator):
         localPackageFolderApplication = self.local_packageFolder + "/" + applicationName
         if not os.path.isdir(localPackageFolderApplication):
             os.mkdir(localPackageFolderApplication)
-
-            guest = self.createGuestFSHandler()
             try:
-                guest.mkdir(self.vmi_repackagingFolder)
+                self.guest.mkdir(self.vmi_repackagingFolder)
             except:
                 print "\"" + self.vmi_repackagingFolder + "\" already exist in guest. Proceeding anyway."
 
             self.startLoadingAnimation()
 
             # Obtain dependency list
-            packageList = guest.sh("rpmdep " + applicationName).split(',')[1:]
+            packageList = self.guest.sh("rpmdep " + applicationName).split(',')[1:]
 
             # Delete packages from list, that were already exported previously
             packageList = [x for x in packageList if not self.pkgExists(x)]
@@ -552,14 +367,14 @@ class VMIManipulatorDNF(VMIManipulator):
 
             # repackage
             for pkg in packageList:
-                guest.sh("rpmrebuild --batch --comment-missing=yes --directory " + self.vmi_repackagingFolder + " " + pkg)
+                self.guest.sh("rpmrebuild --batch --comment-missing=yes --directory " + self.vmi_repackagingFolder + " " + pkg)
 
             # download packages
             # rpmrebuild saves packages to arch specific directories, thus tar_out from multiple locations
-            archDirList = guest.ls(self.vmi_repackagingFolder)
+            archDirList = self.guest.ls(self.vmi_repackagingFolder)
             for arch in archDirList:
                 outputfilename = applicationName + "_" + arch + ".tar"
-                guest.tar_out(self.vmi_repackagingFolder+"/"+arch, localPackageFolderApplication+"/"+outputfilename)
+                self.guest.tar_out(self.vmi_repackagingFolder+"/"+arch, localPackageFolderApplication+"/"+outputfilename)
 
             self.stopLoadingAnimation()
 
@@ -568,8 +383,7 @@ class VMIManipulatorDNF(VMIManipulator):
                 outputfilename = applicationName + "_" + arch + ".tar"
                 print "\t" + localPackageFolderApplication+"/"+outputfilename
 
-            guest.rm_rf(self.vmi_repackagingFolder)
-            self.shutdownGuestFSHandler(guest)
+            self.guest.rm_rf(self.vmi_repackagingFolder)
         else:
             print "Export cancelled. Folder \"" + localPackageFolderApplication + "\" already exists."
 
@@ -580,42 +394,40 @@ class VMIManipulatorDNF(VMIManipulator):
 
         localPackageFolderApplication = self.local_packageFolder + "/" + applicationName
 
-        guest = self.createGuestFSHandler()
-
         # Backup repo configs locally and remove in vmi
         tmpFolderPath = self.local_currentDir + "/tmpRepoConfigs.tar"
         try:
             os.remove(tmpFolderPath)
         except OSError as e:
             pass
-        guest.tar_out(self.vmi_sourcesFolderPath, tmpFolderPath)
-        guest.rm_rf(self.vmi_sourcesFolderPath)
-        guest.mkdir(self.vmi_sourcesFolderPath)
+        self.guest.tar_out(self.vmi_sourcesFolderPath, tmpFolderPath)
+        self.guest.rm_rf(self.vmi_sourcesFolderPath)
+        self.guest.mkdir(self.vmi_sourcesFolderPath)
 
         # Upload packages to temporary repository
         try:
-            guest.mkdir(self.vmi_repoFolder)
+            self.guest.mkdir(self.vmi_repoFolder)
         except:
             print "\"" + self.vmi_repoFolder + "\" already exist in guest. Proceeding anyway."
         tarFiles = os.listdir(localPackageFolderApplication)
         for file in tarFiles:
-            guest.tar_in(localPackageFolderApplication + "/" + file, self.vmi_repoFolder)
+            self.guest.tar_in(localPackageFolderApplication + "/" + file, self.vmi_repoFolder)
 
         # Create temporary local repository in vmi
-        guest.upload(self.localSourcesFile, self.vmi_tmpSourceConfigPath)
-        guest.sh("createrepo " + self.vmi_repoFolder)
+        self.guest.upload(self.localSourcesFile, self.vmi_tmpSourceConfigPath)
+        self.guest.sh("createrepo " + self.vmi_repoFolder)
 
         # Installing package
-        guest.sh("dnf --nogpgcheck -y install " + applicationName)
+        self.guest.sh("dnf --nogpgcheck -y install " + applicationName)
 
         # Remove temporary repository
-        guest.rm_rf(self.vmi_repoFolder)
+        self.guest.rm_rf(self.vmi_repoFolder)
 
         # Remove temporary repo config
-        guest.rm(self.vmi_tmpSourceConfigPath)
+        self.guest.rm(self.vmi_tmpSourceConfigPath)
 
         # Restore original repositories
-        guest.tar_in(tmpFolderPath, self.vmi_sourcesFolderPath)
+        self.guest.tar_in(tmpFolderPath, self.vmi_sourcesFolderPath)
 
         # Remove temp file
         try:
@@ -623,16 +435,13 @@ class VMIManipulatorDNF(VMIManipulator):
         except OSError as e:
             pass
 
-        self.shutdownGuestFSHandler(guest)
         self.stopLoadingAnimation()
 
     def removeApplication(self, applicationName):
         print ('\n=== Remove ' + applicationName + ' from VMI: ' + self.local_relPathToVMI)
         self.startLoadingAnimation()
-        guest = self.createGuestFSHandler()
-        guest.sh("rpm -e " + applicationName)
+        self.guest.sh("rpm -e " + applicationName)
         self.stopLoadingAnimation()
-        self.shutdownGuestFSHandler(guest)
 
     def exportHomeDir(self):
         print ('\n=== Export Userfolder from VMI: ' + self.local_relPathToVMI)
@@ -640,27 +449,21 @@ class VMIManipulatorDNF(VMIManipulator):
             print "Existing user folder in " + self.localUserBackupPath + " will be replaced."
             os.remove(self.localUserBackupPath)
         self.startLoadingAnimation()
-        guest = self.createGuestFSHandler()
-        guest.tar_out(self.vmi_UserFolder, self.localUserBackupPath)
-        self.shutdownGuestFSHandler(guest)
+        self.guest.tar_out(self.vmi_UserFolder, self.localUserBackupPath)
         self.stopLoadingAnimation()
 
     def importHomeDir(self):
         print ('\n=== Import Userfolder to VMI: ' + self.local_relPathToVMI)
         self.startLoadingAnimation()
-        guest = self.createGuestFSHandler()
-        if guest.exists(self.vmi_UserFolder):
+        if self.guest.exists(self.vmi_UserFolder):
             print "Existing user folder in " + self.local_relPathToVMI + " will be replaced."
-            guest.rm_rf(self.vmi_UserFolder)
-        guest.mkdir(self.vmi_UserFolder)
-        guest.tar_in(self.localUserBackupPath, self.vmi_UserFolder)
-        self.shutdownGuestFSHandler(guest)
+            self.guest.rm_rf(self.vmi_UserFolder)
+        self.guest.mkdir(self.vmi_UserFolder)
+        self.guest.tar_in(self.localUserBackupPath, self.vmi_UserFolder)
         self.stopLoadingAnimation()
 
     def removeHomeDir(self):
         print ('\n=== Remove Userfolder from VMI: ' + self.local_relPathToVMI)
         self.startLoadingAnimation()
-        guest = self.createGuestFSHandler()
-        guest.rm_rf(self.vmi_UserFolder)
-        self.shutdownGuestFSHandler(guest)
+        self.guest.rm_rf(self.vmi_UserFolder)
         self.stopLoadingAnimation()

@@ -2,6 +2,10 @@ import os
 import sys
 import sqlite3
 
+from VMIDescription import BaseImageDescriptor
+from VMIGraph import VMIGraph
+
+
 class RepositoryDatabase:
     def __init__(self,forceNew=False):
         self.dbfile = "data/db_repo_metadata.sqlite"
@@ -50,12 +54,21 @@ class RepositoryDatabase:
         ''')
         self.cursor.execute('''
             CREATE TABLE vmiRepository(
-              vmiID         INTEGER PRIMARY KEY AUTOINCREMENT,
-              name          TEXT    NOT NULL,
-              distribution  TEXT    NOT NULL,
-              arch          TEXT    NOT NULL,
-              filename      TEXT    NOT NULL);
+                vmiID         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name          TEXT    NOT NULL,
+                baseImageID   TEXT    NOT NULL,
+                FOREIGN KEY(baseImageID) REFERENCES baseImageRepository(baseID));
         ''')
+        self.cursor.execute('''
+            CREATE TABLE baseImageRepository(
+                baseID         INTEGER PRIMARY KEY AUTOINCREMENT,
+                distribution  TEXT    NOT NULL,
+                version       TEXT    NOT NULL,
+                architecture  TEXT    NOT NULL,
+                pkgManager    TEXT    NOT NULL,
+                filename      TEXT    NOT NULL,
+                graphPath     TEXT    NOT NULL);
+                ''')
         self.db.commit()
 
     def packageExists(self, name, version, arch, distribution):
@@ -121,28 +134,6 @@ class RepositoryDatabase:
                 "\t" + str(result) + "\n" \
                 "\tsolve manually!")
             return result[0][0]
-
-    def getPackageIDForVMI(self,pkgName,vmiID):
-        self.cursor.execute('''
-            SELECT pkgID
-            FROM PackageRepository
-            WHERE name = ?
-            AND pkgID IN (
-              SELECT DISTINCT pkgID
-              FROM PackageDependencies
-              WHERE vmiID = ?
-            )''',
-            (pkgName, vmiID)
-        )
-        result = self.cursor.fetchall()
-        if len(result) > 1:
-            print("ERROR in database: multiple pkgIDs found for VMI:\n" \
-                     "\t"+str(result)+"\n\tsolve manually!")
-            return result[0][0]
-        elif len(result) == 1:
-            return result[0][0]
-        else:
-            return None
 
     def getPackageFileNameFromID(self,pkgID):
         self.cursor.execute('''
@@ -229,21 +220,56 @@ class RepositoryDatabase:
                   ''', packageList)
         self.db.commit()
 
-    def addDependenciesForPackage(self, packageName, dependencyList):
-        pass
-
-    def getVmiID(self,vmiName, distribution, arch, filename):
+    def getBaseImageId(self, filename):
         self.cursor.execute('''
-            SELECT vmiID FROM vmiRepository
-            WHERE name=?
-            AND distribution=?
-            AND arch=?
-            AND filename=?''',
-            (vmiName, distribution, arch, filename)
+            SELECT baseID FROM baseImageRepository
+            WHERE filename=?''',
+            (filename,)
         )
         result = self.cursor.fetchall()
         if len(result) > 1:
-            print("ERROR in database: multiple VMIs with same name, distribution, arch and filename exist:\n" \
+            print("ERROR in database: multiple base Images with same filename exist:\n" 
+                  "\t" + str(result) + "\n\tsolve manually!")
+            return result[0][0]
+        elif len(result) == 1:
+            return result[0][0]
+        else:
+            return None
+
+    def tryAddBaseImage(self, baseImageDescriptor, graphPath):
+        self.cursor.execute('''
+            SELECT baseID
+            FROM baseImageRepository
+            WHERE filename=?''',
+            (baseImageDescriptor.pathToVMI,)
+        )
+        result = self.cursor.fetchall()
+        if len(result) > 1:
+            print("ERROR in database: multiple packages with same name, version, distribution, and filename exist:\n" \
+                  "\tpkgIDs: " + str(result) + "\n\tsolve manually!")
+            return result[0][0]
+        elif len(result) == 1:
+            return result[0][0]
+        else:
+            # Insert new package
+            self.cursor.execute('''
+                            INSERT INTO baseImageRepository (distribution, version,architecture, pkgManager,filename, graphPath)
+                            VALUES (?,?,?,?,?,?)''',
+                                (baseImageDescriptor.distribution, baseImageDescriptor.distributionVersion, baseImageDescriptor.architecture,
+                                 baseImageDescriptor.pkgManager, baseImageDescriptor.pathToVMI, graphPath))
+            self.db.commit()
+            # Return id
+            return self.getBaseImageId(baseImageDescriptor.pathToVMI)
+
+    def getVmiID(self,vmiName):
+        self.cursor.execute('''
+            SELECT vmiID FROM vmiRepository
+            WHERE name=?''',
+            (vmiName,)
+        )
+        result = self.cursor.fetchall()
+        if len(result) > 1:
+            print("ERROR in database: multiple VMIs with same name exist:\n" \
                      "\t"+str(result)+"\n\tsolve manually!")
             return result[0][0]
         elif len(result) == 1:
@@ -251,145 +277,172 @@ class RepositoryDatabase:
         else:
             return None
 
-    def tryAddVMI(self, name, distribution, arch, filename):
-        """
-        tries to add new VMI and returns vmiID. if VMI already exists its vmiID is returned
-        :param name:
-        :param distribution:
-        :param arch:
-        :param filename:
-        :return: vmiID
-        """
-        self.cursor.execute('''
-                SELECT vmiID FROM vmiRepository
-                WHERE name=?
-                AND distribution=?
-                AND arch=?
-                AND filename=?
-            ''',
-            (name, distribution, arch, filename)
-        )
-        result = self.cursor.fetchall()
-        if len(result) > 1:
-            print("ERROR in database: multiple VMIs with same name, distribution, arch and filename exist:\n" \
-                     "\t"+str(result)+"\n\tsolve manually!")
-            return result[0][0]
-        elif len(result) == 1:
-            return result[0][0]
-        else:
-            # Insert new VMI
-            self.cursor.execute('''
-                INSERT INTO vmiRepository (name,distribution,arch,filename)
-                VALUES (?,?,?,?)
-            ''', (name, distribution, arch, filename))
-            self.db.commit()
-            # Return id
-            self.cursor.execute('''
-                    SELECT vmiID FROM vmiRepository
-                    WHERE name=?
-                    AND distribution=?
-                    AND arch=?
-                    AND filename=?
-                ''',
-                (name, distribution, arch, filename)
-            )
-            result = self.cursor.fetchall()
-            return result[0][0]
-
-    def addApplicationForVMI(self, vmiName, distribution, arch, vmiFilename, appName, packageDict):
-        """
-
-        :param vmiName:
-        :param distribution:
-        :param arch:
-        :param vmiFilename:
-        :param packageDict: dict(pkgName,(version,arch,filename)) ,NOTE: filename only if package newly downloaded, otherwise None
-        :return:
-        """
-
-        # (Create and) obtain VMI ID
-        vmiID = self.tryAddVMI(vmiName, distribution, arch, vmiFilename)
-
-        # (Add and) obtain id of main package / application
-        appInfo = packageDict[appName]
-        appVersion = appInfo[0]
-        appArch = appInfo [1]
-        appFileName = appInfo[2]
-        if appVersion == None:
-            sys.exit("ERROR in database: no version for application " + appName + " received!")
-        if appArch == None:
-            sys.exit("ERROR in database: no architecture for application " + appName + " received!")
-        # package already exists in repo
-        if appFileName == None:
-            appID = self.getPackageID(appName,appVersion,appArch,distribution)
-        # package has to be added
-        else:
-            appID = self.tryAddPackage(appName, appVersion, appArch, distribution, appFileName)
-
-        # Create list of all packages required by application (dependencies) and list of new packages; isolate application info
-        packageListDep = []  # [(vmiID,pkgID,deppkgName, deppkgVersion, deppkgArch, deppkgDistribution)]
-        packageListNew = []  # [(deppkgName, deppkgVersion, deppkgArch, deppkgDistribution, filename)]
-        for pkgName,pkgInfo in packageDict.iteritems():
-            if pkgName != appName:                                                      # main application already added and not a dependency of itself
-                packageListDep.append((vmiID,appID, pkgName, pkgInfo[0], pkgInfo[1], distribution)) # all others are dependencies of package
-                if pkgInfo[2] != None:                                                  # filename exists => package has to be added
-                    packageListNew.append((pkgName, pkgInfo[0], pkgInfo[1], distribution, pkgInfo[2]))
-
-        # Add new packages to database
-        if len(packageListNew)>0:
-            self.addPackageList(packageListNew)
-
-        # Add dependency entries for application
-        if not self.appDepExistsForVMI(vmiID,appID):
-            self.addDepListForApp(packageListDep)
-
-    def appDepExistsForVMI(self,vmiID,pkgID):
-        self.cursor.execute('''
-            SELECT depID FROM PackageDependencies
-            WHERE vmiID=?
-            AND pkgID=?''',
-            (vmiID, pkgID)
-        )
-        result = self.cursor.fetchall()
-        if len(result) > 0:
+    def vmiExists(self, vmiName):
+        if self.getVmiID(vmiName) != None:
             return True
         else:
             return False
 
-    def addDepListForApp(self,depList):
+    def getBaseImageInfoForVmiID(self, vmiID):
+        self.cursor.execute('''
+                SELECT distribution,version,architecture,pkgManager,filename,graphPath
+                FROM baseImageRepository
+                WHERE baseID=(
+                    SELECT baseImageID
+                    FROM vmiRepository
+                    WHERE vmiID = ?)
+            ''',
+            (vmiID,)
+        )
+        result = self.cursor.fetchall()
+        if len(result) == 1:
+            return [str(x) for x in result[0]]
+        else:
+            return None
+
+    def getNumberOfBaseImagesWith(self,distribution,version,architecture,pkgManager):
+        self.cursor.execute('''
+            SELECT count(baseID)
+            FROM baseImageRepository
+            WHERE distribution = ?
+                AND version = ?
+                AND architecture= ?
+                AND pkgManager = ?
+            ''',
+            (distribution,version,architecture,pkgManager)
+        )
+        result = self.cursor.fetchall()
+        if len(result) == 1:
+            return result[0][0]
+        else:
+            return None
+
+    def addVMI(self, vmiName, baseImageID):
+        """
+        tries to add new VMI and returns vmiID. if VMI already exists its vmiID is returned
+        :param vmiName:
+        :param baseImageID:
+        """
+        # check if VMI exists
+        self.cursor.execute('''
+            SELECT vmiID FROM vmiRepository
+            WHERE name=?''',
+            (vmiName,)
+        )
+        result = self.cursor.fetchall()
+        if len(result) > 1:
+            sys.exit("ERROR in database: multiple VMIs with same name exist:\n"
+                     "\t"+str(result)+"\n\tsolve manually!")
+        elif len(result) == 1:
+            sys.exit("ERROR in database: adding already existing VMI:\n"
+                  "\t" + str(result) + "\n\tsolve manually!")
+        else:
+            # Insert new VMI
+            self.cursor.execute('''
+                INSERT INTO vmiRepository (name,baseImageID)
+                VALUES (?,?)
+            ''', (vmiName, baseImageID))
+            self.db.commit()
+            # Return id
+            return self.getVmiID(vmiName)
+
+    def addMainServicesDepListForVMI(self, vmiID, distribution, mainServicesDepList):
+        """
+        :param vmiID:
+        :param distribution:
+        :param mainServicesDepList:
+                # in the form of [(root,dict{nodeName:dict{nodeAttributes}})]
+                # Note: root is mainservice and part of the dict
+        :return:
+        """
+        # transform input data into list readable by database connector
+        depList = []
+        # format: [(vmiID,pkgID,deppkgName, deppkgVersion, deppkgArch, deppkgDistribution)]
+        for mainServiceName,pkgDict in mainServicesDepList:
+            mainServiceID = self.getPackageID(mainServiceName,
+                                              pkgDict[mainServiceName][VMIGraph.GNodeAttrVersion],
+                                              pkgDict[mainServiceName][VMIGraph.GNodeAttrArchitecture],
+                                              distribution)
+            assert(mainServiceID != None)
+            for depName,depInfo in pkgDict.iteritems():
+                if depName != mainServiceName:
+                    depList.append((
+                        vmiID,
+                        mainServiceID,
+                        depName,
+                        depInfo[VMIGraph.GNodeAttrVersion],
+                        depInfo[VMIGraph.GNodeAttrArchitecture],
+                        distribution
+                    ))
         self.cursor.executemany('''
-                              INSERT INTO PackageDependencies (vmiID,pkgID, deppkgID)
-                              VALUES (?, ?, (SELECT pkgID FROM PackageRepository
-                                    WHERE name=?
-                                    AND version=?
-                                    AND architecture=?
-                                    AND distribution=?))
-                          ''', (depList))
+                INSERT INTO PackageDependencies (vmiID,pkgID, deppkgID)
+                VALUES (?, ?, (SELECT pkgID FROM PackageRepository
+                                WHERE name=?
+                                AND version=?
+                                AND architecture=?
+                                AND distribution=?))
+            ''', (depList))
         self.db.commit()
 
-    def getReqFileNamesForApp(self, vmiName, distribution, arch, vmiFilename, appName):
-        vmiID = self.getVmiID(vmiName, distribution,arch,vmiFilename)
-        appID = self.getPackageIDForVMI(appName,vmiID)
-        if vmiID == None or appID == None:
-            sys.exit("ERROR in database: application \"" + appName + "\" not stored for VMI \""+vmiName+"\"!")
+    def getMainServicesForVmiID(self, vmiID):
+        self.cursor.execute('''
+            SELECT name
+            FROM PackageRepository
+            WHERE pkgID IN (
+                SELECT DISTINCT pkgID
+                FROM PackageDependencies
+                WHERE vmiID=?
+            )''',
+            (vmiID,)
+        )
+        result = self.cursor.fetchall()
+        if len(result) >= 1:
+            return [str(x[0]) for x in result]
         else:
-            self.cursor.execute('''
-                SELECT fileName FROM PackageRepository
-                WHERE pkgID IN(
-                  SELECT deppkgID
-                  FROM PackageDependencies
-                  WHERE vmiID = ?
-                  AND pkgID = ?
-                )''',
-                (vmiID, appID)
+            return None
+
+    def getDepPkgInfoSetForVMI(self, vmiID):
+        self.cursor.execute('''
+            SELECT name,version,architecture,filename
+            FROM PackageRepository
+            WHERE pkgID IN (
+                SELECT DISTINCT deppkgID
+                FROM PackageDependencies
+                WHERE vmiID=?
             )
-            result = self.cursor.fetchall()
-            fileNameList = [ str(row[0]) for row in result ]
-            fileNameList.append(self.getPackageFileNameFromID(appID))
-            return fileNameList
+            OR pkgID IN(
+                SELECT DISTINCT pkgID
+                FROM PackageDependencies
+                WHERE vmiID=?
+            )''',
+            (vmiID,vmiID)
+        )
+        result = self.cursor.fetchall()
+        if len(result) >= 1:
+            return {(str(x[0]), str(x[1]), str(x[2]), str(x[3])) for x in result}
+        else:
+            return None
 
+    def getVMIData(self, vmiName):
+        """
 
+        :param vmiName:
+        :return: triple (pathToBaseImage, mainServices, packageList)
+        :rtype (BaseImageDescriptor,list(),list())
+        """
+        vmiID = self.getVmiID(vmiName)
+        if vmiID == None:
+            return None
 
+        baseImageInfo = self.getBaseImageInfoForVmiID(vmiID)
+        baseImage = BaseImageDescriptor(baseImageInfo[4])
+        baseImage.initializeFromRepo(baseImageInfo[0], baseImageInfo[1], baseImageInfo[2], baseImageInfo[3], baseImageInfo[5])
+
+        return (
+            baseImage,
+            self.getMainServicesForVmiID(vmiID),
+            self.getDepPkgInfoSetForVMI(vmiID)
+        )
 
 
 
