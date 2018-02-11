@@ -7,20 +7,13 @@ import networkx as nx
 from enum import IntEnum
 
 
-class NodeData(IntEnum):
-    Name = 0
-    Version = 1
-    Arch = 2
-    Essential = 3
-    Depends = 4
-    PreDepends = 5
-
 class VMIGraph:
     __metaclass__ = ABCMeta
     GNodeAttrName = "name"
     GNodeAttrVersion = "version"
     GNodeAttrArchitecture = "architecture"
     GNodeAttrEssential = "essential"
+    GNodeAttrInstallSize = "size"
     GEdgeAttrConstraint = "constraint"
     GEdgeAttrOperator = "operator"
     GEdgeAttrVersion = "version"
@@ -40,8 +33,9 @@ class VMIGraph:
             Version     = 1
             Arch        = 2
             Essential   = 3
-            Depends     = 4
-            PreDepends  = 5
+            InstallSize = 4
+            Depends     = 5
+            PreDepends  = 6
 
         # Regular Expressions for pattern matching Package's info
         patternPkgName = r"([^(): ]*)"
@@ -54,7 +48,7 @@ class VMIGraph:
 
         # Obtain Package Data from guest
         pkgsInfoString = guest.sh(
-            "dpkg-query --show --showformat='${Package};${Version};${Architecture};${Essential};${Depends};${Pre-Depends}\\n'")[:-1]
+            "dpkg-query --show --showformat='${Package};${Version};${Architecture};${Essential};${Installed-Size};${Depends};${Pre-Depends}\\n'")[:-1]
         # returns lines of form "curl;1.1;amd64;no;dep1, dep2,...;dep3, dep4,..."
 
         # List of node names and attributes
@@ -68,11 +62,14 @@ class VMIGraph:
                                  VMIGraph.GNodeAttrName: lineData[Q.Name],
                                  VMIGraph.GNodeAttrVersion: lineData[Q.Version],
                                  VMIGraph.GNodeAttrArchitecture: lineData[Q.Arch],
-                                 VMIGraph.GNodeAttrEssential: essentialPkg}))
+                                 VMIGraph.GNodeAttrEssential: essentialPkg,
+                                 VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize]
+                            }))
             pkgHelperDict[lineData[Q.Name]] = {VMIGraph.GNodeAttrName: lineData[Q.Name],
                                                VMIGraph.GNodeAttrVersion: lineData[Q.Version],
                                                VMIGraph.GNodeAttrArchitecture: lineData[Q.Arch],
-                                               VMIGraph.GNodeAttrEssential: essentialPkg}
+                                               VMIGraph.GNodeAttrEssential: essentialPkg,
+                                               VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize]}
 
         # List of edge data (fromNode, toNode and attributes)
         depList = []  # in the form of [(pkg,deppkg,{constraint:True, operator:">=", version:"1.6"})]

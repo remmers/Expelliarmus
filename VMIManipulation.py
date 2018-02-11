@@ -8,6 +8,8 @@ import guestfs
 import tarfile
 from abc import ABCMeta, abstractmethod
 import subprocess
+
+from StaticInfo import StaticInfo
 from RepositoryDatabase import RepositoryDatabase
 from VMIGraph import VMIGraph
 
@@ -21,16 +23,11 @@ class VMIManipulator:
         self.vmiName = vmiName
         self.distribution = distribution
         self.vmi_arch = arch
-        self.vmi_name = self.local_relPathToVMI.split("/")[-1]
         self.local_currentDir = os.path.dirname(os.path.realpath(__file__))
         self.local_absPathToVMI = self.local_currentDir + '/' + pathToVMI
-        self.local_generalPackageFolder = "packages"
-        self.local_repoConfigFolder = "RepoConfigFiles"
-        self.localUserBackupFolder = "VMI_UserfolderBackups"
         self.vmi_repackagingFolder = "/var/exportpackages"
         self.vmi_repoFolder = "/var/tempRepository"
         self.loading = False
-        self.checkMainFolderExistence()
 
     @staticmethod
     def getVMIManipulator(pathToVMI, vmiName, guest, root):
@@ -48,14 +45,6 @@ class VMIManipulator:
             return VMIManipulatorDNF(pathToVMI, vmiName, distro, arch, guest)
         else:
             raise (Exception("VMI's Package Management \"" + pkgManager + "\" is not supported."))
-
-    def checkMainFolderExistence(self):
-        if not os.path.isdir(self.local_repoConfigFolder):
-            sys.exit("ERROR: folder for repository configuration files not found (looking for %s)" % self.local_repoConfigFolder)
-        if not os.path.isdir(self.local_generalPackageFolder):
-            os.mkdir(self.local_generalPackageFolder)
-        if not os.path.isdir(self.localUserBackupFolder):
-            os.mkdir(self.localUserBackupFolder)
 
     @abstractmethod
     def exportPackages(self, packageDict):pass
@@ -160,16 +149,19 @@ class VMIManipulator:
 class VMIManipulatorAPT(VMIManipulator):
     def __init__(self, pathToVMI, vmiName, distribution, arch, guest):
         super(VMIManipulatorAPT, self).__init__(pathToVMI, vmiName, distribution, arch, guest)
-        self.local_packageFolder = self.local_generalPackageFolder + "/" + self.distribution
-        self.vmi_tmpSourceConfigPath = "/etc/apt/sources.list.d/tempRepo.list"
-        self.localSourcesFile = self.local_repoConfigFolder + "/DEB_temprepository.list"
+        self.local_packageFolder = StaticInfo.relPathLocalRepositoryPackages + "/" + self.distribution
+        self.vmi_sourcesConfigFolder = "/etc/apt/sources.list.d"
+        self.vmi_tmpSourceConfigPath = self.vmi_sourcesConfigFolder + "/tempRepo.list"
+        self.localSourcesFile = StaticInfo.relPathGuestRepoConfigs + "/DEB_temprepository.list"
         self.vmi_UserFolder = "/home"
-        self.localUserBackupPath = self.localUserBackupFolder + "/userfolder_" + pathToVMI.split(".")[0] + ".tar"
+        self.localUserBackupPath = StaticInfo.relPathLocalRepositoryUserFolders + "/userfolder_" + self.vmiName + ".tar"
         self.checkFolderExistence()
 
     def checkFolderExistence(self):
         if not os.path.isdir(self.local_packageFolder):
             os.mkdir(self.local_packageFolder)
+        if not os.path.isfile(self.localSourcesFile):
+            sys.exit("ERROR: config file for guest repository not found (looking for %s)" % StaticInfo.relPathGuestRepoConfigs)
 
     def exportPackages(self, packageDict):
         """
@@ -198,7 +190,7 @@ class VMIManipulatorAPT(VMIManipulator):
                 "cd /var/exportpackages && fakeroot -u dpkg-repack " + " ".join(packageDict.keys()))
 
             # Download and extract packages, delete temp folder in guest
-            localpackagesFilePath = self.local_packageFolder + "/" + self.vmi_name + "Packages.tar"
+            localpackagesFilePath = self.local_packageFolder + "/" + self.vmiName + "Packages.tar"
             self.guest.tar_out(self.vmi_repackagingFolder, localpackagesFilePath)
             self.guest.rm_rf(self.vmi_repackagingFolder)
             with tarfile.open(localpackagesFilePath) as tar:
@@ -223,6 +215,8 @@ class VMIManipulatorAPT(VMIManipulator):
 
     def importPackages(self, mainServices, filenames):
 
+        errorString = None
+
         # check if installation necessary
         if len(mainServices) > 0:
             # prepare tarfile with compressed packages for import
@@ -238,70 +232,44 @@ class VMIManipulatorAPT(VMIManipulator):
                 print "\"" + self.vmi_repoFolder + "\" already exist in guest. Proceeding anyway."
             self.guest.tar_in(localpackagesFilePath, self.vmi_repoFolder)
 
-            # Upload temporary sources.list
-            self.guest.upload(self.localSourcesFile, self.vmi_tmpSourceConfigPath)
-
             # Rename default .list
             self.guest.rename("/etc/apt/sources.list", "/etc/apt/sources.list2")
+            self.guest.rename("/etc/apt/sources.list.d", "/etc/apt/sources.list.d2")
+
+            # Upload temporary sources.list
+            self.guest.mkdir(self.vmi_sourcesConfigFolder)
+            self.guest.upload(self.localSourcesFile, self.vmi_tmpSourceConfigPath)
+
+            self.guest.sh("cd /var/tempRepository && dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz")
 
             # Installing package
-            self.guest.sh("cd /var/tempRepository && dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz \
-                                && apt-get update \
-                                && apt-get install " + ",".join(mainServices) + " -y --allow-unauthenticated")
+            try:
+                self.guest.sh("apt-get update \
+                                && DEBIAN_FRONTEND=noninteractive "
+                                     "apt-get --option Dpkg::Options::=--force-confnew -y --allow-unauthenticated "
+                                     "install " + " ".join(mainServices) + "")
+                #exec >> '/var/builder.log' 2>&1 &&
+            except RuntimeError as e:
+                if "Can not write log (Is /dev/pts mounted?)" in e.message:
+                    errorString = e.message
+                else:
+                    print e.message
+                    sys.exit("ERROR while reassembling: Importing packages to \"%s\" exited with errors." % self.local_relPathToVMI)
 
             # Remove temporary repository
             self.guest.rm_rf(self.vmi_repoFolder)
 
             # Remove temporary sources.list
-            self.guest.rm(self.vmi_tmpSourceConfigPath)
+            self.guest.rm_rf(self.vmi_sourcesConfigFolder)
 
             # Rename default .list
             self.guest.rename("/etc/apt/sources.list2", "/etc/apt/sources.list")
+            self.guest.rename("/etc/apt/sources.list.d2", "/etc/apt/sources.list.d")
 
             # Remove temporary tarfile
             os.remove(localpackagesFilePath)
 
-    def importApplication(self, applicationName):
-        print ('\n=== Import ' + applicationName + ' to VMI: ' + self.local_relPathToVMI)
-
-        # prepare tarfile with compressed packages for import
-        localpackagesFilePath = self.local_packageFolder + "/" + applicationName + "Packages.tar"
-        packageFileNames = []
-        with RepositoryDatabase() as repoDB:
-            packageFileNames = repoDB.getReqFileNamesForApp(self.vmi_name,self.distribution,self.vmi_arch,self.local_relPathToVMI,applicationName)
-        with tarfile.open(localpackagesFilePath,mode='w') as tar:
-            for pkgFileName in packageFileNames:
-                tar.add(pkgFileName)
-
-        # Upload packages to temporary repository
-        try:
-            self.guest.mkdir(self.vmi_repoFolder)
-        except:
-            print "\"" + self.vmi_repoFolder + "\" already exist in guest. Proceeding anyway."
-        self.guest.tar_in(localpackagesFilePath, self.vmi_repoFolder)
-
-        # Upload temporary sources.list
-        self.guest.upload(self.localSourcesFile, self.vmi_tmpSourceConfigPath)
-
-        # Rename default .list
-        self.guest.rename("/etc/apt/sources.list", "/etc/apt/sources.list2")
-
-        # Installing package
-        self.guest.sh("cd /var/tempRepository && dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz \
-                    && apt-get update \
-                    && apt-get install " + applicationName + " -y --allow-unauthenticated")
-
-        # Remove temporary repository
-        self.guest.rm_rf(self.vmi_repoFolder)
-
-        # Remove temporary sources.list
-        self.guest.rm(self.vmi_tmpSourceConfigPath)
-
-        # Rename default .list
-        self.guest.rename("/etc/apt/sources.list2", "/etc/apt/sources.list")
-
-        # Remove temporary tarfile
-        os.remove(localpackagesFilePath)
+        return errorString
 
     def removePackages(self, packageList):
         """
@@ -312,31 +280,30 @@ class VMIManipulatorAPT(VMIManipulator):
         self.guest.sh("apt-get purge --auto-remove -y " + " ".join(packageList))
 
     def exportHomeDir(self):
-        print ('\nExport Userfolder from VMI: ' + self.local_relPathToVMI)
         if os.path.isfile(self.localUserBackupPath):
             print "\tExisting user folder in " + self.localUserBackupPath + " will be replaced."
             os.remove(self.localUserBackupPath)
         self.guest.tar_out(self.vmi_UserFolder, self.localUserBackupPath)
+        return self.localUserBackupPath
 
-    def importHomeDir(self):
+    def importHomeDir(self, pathToHomeDir):
         print ('\nImport Userfolder to VMI: ' + self.local_relPathToVMI)
         if self.guest.exists(self.vmi_UserFolder):
             print "Existing user folder in " + self.local_relPathToVMI + " will be replaced."
             self.guest.rm_rf(self.vmi_UserFolder)
         self.guest.mkdir(self.vmi_UserFolder)
-        self.guest.tar_in(self.localUserBackupPath, self.vmi_UserFolder)
+        self.guest.tar_in(pathToHomeDir, self.vmi_UserFolder)
 
     def removeHomeDir(self):
-        print ('\nRemove Userfolder from VMI: ' + self.local_relPathToVMI)
         self.guest.rm_rf(self.vmi_UserFolder)
         self.guest.umount_all()
 
 class VMIManipulatorDNF(VMIManipulator):
     def __init__(self, pathToVMI, vmiName, distribution, arch, guest):
         super(VMIManipulatorDNF, self).__init__(pathToVMI, vmiName, distribution, arch, guest)
-        self.local_packageFolder    = self.local_generalPackageFolder + "/" + self.distribution
-        self.localSourcesFile       = self.local_repoConfigFolder + "/RPM_temprepository.repo"
-        self.localUserBackupPath    = self.localUserBackupFolder + "/userfolder_" + pathToVMI.split(".")[0] + ".tar"
+        self.local_packageFolder    = StaticInfo.relPathLocalRepositoryPackages + "/" + self.distribution
+        self.localSourcesFile       = StaticInfo.relPathGuestRepoConfigs + "/RPM_temprepository.repo"
+        self.localUserBackupPath    = StaticInfo.relPathLocalRepositoryUserFolders + "/userfolder_" + pathToVMI.split(".")[0] + ".tar"
         self.vmi_sourcesFolderPath  = "/etc/yum.repos.d/"
         self.vmi_tmpSourceConfigPath= "/etc/yum.repos.d/tempRepo.repo"
         self.vmi_UserFolder = "/home"
@@ -345,6 +312,8 @@ class VMIManipulatorDNF(VMIManipulator):
     def checkFolderExistence(self):
         if not os.path.isdir(self.local_packageFolder):
             os.mkdir(self.local_packageFolder)
+        if not os.path.isfile(self.localSourcesFile):
+            sys.exit("ERROR: config file for guest repository not found (looking for %s)" % StaticInfo.relPathGuestRepoConfigs)
 
     def exportApplication(self, applicationName):
         print ('\n=== Export ' + applicationName + ' from VMI: ' + self.local_relPathToVMI)
@@ -448,19 +417,16 @@ class VMIManipulatorDNF(VMIManipulator):
         if os.path.isfile(self.localUserBackupPath):
             print "Existing user folder in " + self.localUserBackupPath + " will be replaced."
             os.remove(self.localUserBackupPath)
-        self.startLoadingAnimation()
         self.guest.tar_out(self.vmi_UserFolder, self.localUserBackupPath)
-        self.stopLoadingAnimation()
+        return self.localUserBackupPath
 
-    def importHomeDir(self):
+    def importHomeDir(self, pathToHomeDir):
         print ('\n=== Import Userfolder to VMI: ' + self.local_relPathToVMI)
-        self.startLoadingAnimation()
         if self.guest.exists(self.vmi_UserFolder):
             print "Existing user folder in " + self.local_relPathToVMI + " will be replaced."
             self.guest.rm_rf(self.vmi_UserFolder)
         self.guest.mkdir(self.vmi_UserFolder)
-        self.guest.tar_in(self.localUserBackupPath, self.vmi_UserFolder)
-        self.stopLoadingAnimation()
+        self.guest.tar_in(pathToHomeDir, self.vmi_UserFolder)
 
     def removeHomeDir(self):
         print ('\n=== Remove Userfolder from VMI: ' + self.local_relPathToVMI)

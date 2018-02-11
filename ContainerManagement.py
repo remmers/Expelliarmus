@@ -10,7 +10,7 @@ class AppContainerizationUbuntu:
     def __init__(self,appName, forceNew=False, userName="developer", gui=True):
         self.local_absPath_currentDir = os.path.dirname(os.path.realpath(__file__))
         self.local_relPath_packageFolder = "packages/ubuntu"
-        self.local_relPath_repoConfigFolder = "RepoConfigFiles"
+        self.local_relPath_repoConfigFolder = "VMIRepoConfigFiles"
         self.local_relPath_SourcesFile = self.local_relPath_repoConfigFolder + "/DEB_temprepository.list"
         self.local_relPath_tempRepoFolder = "tempRepository"
         self.container_repoFolder = "/var/tempRepository"

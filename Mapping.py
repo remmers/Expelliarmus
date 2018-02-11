@@ -6,54 +6,6 @@ from VMIGraph import VMIGraph
 from VMIManipulation import VMIManipulator
 
 class Mapping:
-    def __init__(self, graph1, graph2, g1MainServices, g2MainServices):
-        """
-        :param VMIGraph.VMIGraph graph1:
-        :param VMIGraph.VMIGraph graph2:
-        :param list() g1MainServices:
-        :param list() g2MainServices:
-        """
-        self.g1 = graph1 # type: VMIGraph
-        self.g2 = graph2 # type: VMIGraph
-        self.g1MainServices = g1MainServices
-        self.g2MainServices = g2MainServices
-        self.g1MainServicesSubGraph = None
-        self.g2MainServicesSubGraph = None
-        self.matchSet = set()
-        self.checkMainServicesExistence()
-
-
-
-    def createMatchSet(self):
-        g1NodeDict = dict([ (pkgName, pkgInfoDict) for pkgName, pkgInfoDict in self.g1.getNodeData()])
-        g2NodeDict = dict([ (pkgName, pkgInfoDict) for pkgName, pkgInfoDict in self.g2.getNodeData()])
-        print "g1 Nodes: " + str(len(g1NodeDict))
-        print "g2 Nodes: " + str(len(g2NodeDict))
-        # Filter matchSet
-        for pkgName in set(g1NodeDict.keys()).intersection(set(g2NodeDict.keys())):
-            node1Data = g1NodeDict[pkgName]
-            node2Data = g2NodeDict[pkgName]
-            # if versions differ, don't match
-            if node1Data[VMIGraph.GNodeAttrVersion] != node2Data[VMIGraph.GNodeAttrVersion]:
-                print pkgName + " was not added to matchSet: Versions differ"
-                print "\t" + node1Data[VMIGraph.GNodeAttrVersion]
-                print "\t" + node2Data[VMIGraph.GNodeAttrVersion]
-                continue
-            # if architecture differ
-            if (
-                node1Data[VMIGraph.GNodeAttrArchitecture] != node2Data[VMIGraph.GNodeAttrArchitecture]
-                and not (
-                        node1Data[VMIGraph.GNodeAttrArchitecture] == "all"
-                    or  node2Data[VMIGraph.GNodeAttrArchitecture] == "all")
-            ):
-                print pkgName + " was not added to matchSet: Architectures differ"
-                print "\t" + node1Data[VMIGraph.GNodeAttrArchitecture]
-                print "\t" + node2Data[VMIGraph.GNodeAttrArchitecture]
-                continue
-
-            self.matchSet.add(pkgName)
-        print "Matching Nodes: " + str(len(self.matchSet))
-
     @staticmethod
     def checkMainServicesExistence(vmiDescriptor1,mainServices):
         for pkgName in mainServices:
@@ -77,46 +29,196 @@ class Mapping:
         return True
 
     @staticmethod
-    def getSimilarityBetweenNodeDicts(g1NodeDict, g2NodeDict):
-        def max(x,y):
+    def computeSimilarityBetweenVMIDescriptorsSimple(vmi1, vmi2, onlyOnMainServices):
+        """
+        :param VMIDescriptor vmi1:
+        :param VMIDescriptor vmi2:
+        :param Boolean onlyOnMainServices:
+        :return:
+        """
+
+        def max(x, y):
             if x > y:
                 return x
             else:
                 return y
 
-        numG1Nodes = len(g1NodeDict)
-        numG2Nodes = len(g2NodeDict)
-        sum = 0
+        g1NodesDict = vmi1.getNodeData()
+        g2NodesDict = vmi2.getNodeData()
+        numG1Nodes = len(g1NodesDict)
+        numG2Nodes = len(g2NodesDict)
 
-        # filter on same name
-        matchSet = set(g1NodeDict.keys()).intersection(set(g2NodeDict.keys()))
+        # similarity =
+        #                 |matching Nodes in nodesToCheck|
+        #               / |nodesToCheck|
 
-        for pkgName in matchSet:
-            pkg1Data = g1NodeDict[pkgName]
-            pkg2Data = g2NodeDict[pkgName]
+        if onlyOnMainServices:
+            # nodesToCheck: union(mainServices1,mainServices2)
+            nodesToCheck = set(vmi1.getNodeDataFromMainServicesSubtrees().keys()) \
+                .union(
+                set(vmi2.getNodeDataFromMainServicesSubtrees().keys()))
+            numAllNodes = len(nodesToCheck)
+
+            # prefilter nodesToCheck by name occurring in both graphs
+            nodesToCheck = nodesToCheck.intersection(set(g1NodesDict.keys()))
+            nodesToCheck = nodesToCheck.intersection(set(g2NodesDict.keys()))
+        else:
+            # nodesToCheck: union(g1,g2)
+            numAllNodes = len(set(g1NodesDict.keys()).union(set(g2NodesDict.keys())))
+            # prefilter nodesToCheck by name occurring in both graphs
+            nodesToCheck = set(g1NodesDict.keys()).intersection(set(g2NodesDict.keys()))
+
+        numMatches = 0
+
+        # Check similarity for all (prefiltered) packages
+        for pkgName in nodesToCheck:
+            pkg1Data = g1NodesDict[pkgName]
+            pkg2Data = g2NodesDict[pkgName]
+            if (
+                    # Version has to be the same
+                            pkg1Data[VMIGraph.GNodeAttrVersion] == pkg2Data[VMIGraph.GNodeAttrVersion]
+                    # Architecture has to be the same, or at least on has to say all
+                    and (
+                                        pkg1Data[VMIGraph.GNodeAttrArchitecture] == pkg2Data[
+                                        VMIGraph.GNodeAttrArchitecture]
+                                or pkg1Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                            or pkg2Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                    )
+            ):
+                numMatches = numMatches + 1
+
+        similarity = float(numMatches) / float(numAllNodes)
+        if onlyOnMainServices:
+            print "\nComparison of two VMIs (Only on main services!):\n" \
+                  "\tVMI 1: %i packages\n" \
+                  "\tVMI 2: %i packages\n" \
+                  "\t\t %i main service related packages match in name, version and architecture\n" \
+                  "\t\t %i compared packages in total (union of main services from both VMIs)\n" \
+                  "\t\t similarity = %i/%i = %.3f" \
+                  % (numG1Nodes, numG2Nodes, numMatches, numAllNodes, numMatches, numAllNodes, similarity)
+        else:
+            print "\nComparison of two VMIs:\n" \
+                  "\tVMI 1: %i packages\n" \
+                  "\tVMI 2: %i packages\n" \
+                  "\t\t %i packages match in name, version and architecture\n" \
+                  "\t\t similarity = %i/%i = %.3f" \
+                  % (numG1Nodes, numG2Nodes, numMatches, numMatches, numAllNodes, similarity)
+        return similarity
+
+    @staticmethod
+    def computeSimilarityBetweenVMIDescriptorsWithWeights(vmi1, vmi2, onlyOnMainServices):
+        """
+        :param VMIDescriptor vmi1:
+        :param VMIDescriptor vmi2:
+        :param Boolean onlyOnMainServices:
+        :return:
+        """
+        def max(x, y):
+            """
+            :param Float x:
+            :param Float y:
+            :return:
+            """
+            x = float(x)
+            y = float(y)
+            if x > y:
+                return x
+            else:
+                return y
+
+        g1NodesDict = vmi1.getNodeData()
+        g2NodesDict = vmi2.getNodeData()
+        numG1Nodes = len(g1NodesDict)
+        numG2Nodes = len(g2NodesDict)
+
+        # similarity =
+        #                 |(weight * 1) for each matching Node in nodesToCheck|
+        #               / |(weight * 1) for each node in nodesToCheck|
+        # in variables:
+        #                 sumNormSizeMatches
+        #               / sumNormSizeAll
+
+        if onlyOnMainServices:
+            # nodesToCheck: union(mainServices1,mainServices2)
+            nodesToCheck = set(vmi1.getNodeDataFromMainServicesSubtrees().keys())\
+                           .union(
+                           set(vmi2.getNodeDataFromMainServicesSubtrees().keys()))
+        else:
+            # nodesToCheck: union(g1,g2)
+            nodesToCheck = set(g1NodesDict.keys()).union(set(g2NodesDict.keys()))
+
+        numAllNodes = len(nodesToCheck)
+
+        # determine maximum install size for normalized sizes as weights
+        maxInstallSize = 0
+        for pkg in nodesToCheck:
+            if pkg in g1NodesDict:
+                maxInstallSize = max(maxInstallSize, int(g1NodesDict[pkg][VMIGraph.GNodeAttrInstallSize]))
+            if pkg in g2NodesDict:
+                maxInstallSize = max(maxInstallSize, int(g2NodesDict[pkg][VMIGraph.GNodeAttrInstallSize]))
+
+        # calculate sumNormSizeAll as sum of normalized sizes (weights)
+        sumNormSizeAll = 0.0
+        for pkg in nodesToCheck:
+            if pkg in g1NodesDict and pkg in g2NodesDict:
+                sumNormSizeAll = sumNormSizeAll +\
+                                 max(g1NodesDict[pkg][VMIGraph.GNodeAttrInstallSize],
+                                     g2NodesDict[pkg][VMIGraph.GNodeAttrInstallSize])/maxInstallSize
+            elif pkg in g1NodesDict:
+                sumNormSizeAll = sumNormSizeAll + \
+                                 float(g1NodesDict[pkg][VMIGraph.GNodeAttrInstallSize]) / maxInstallSize
+            elif pkg in g2NodesDict:
+                sumNormSizeAll = sumNormSizeAll + \
+                                 float(g2NodesDict[pkg][VMIGraph.GNodeAttrInstallSize]) / maxInstallSize
+
+        # prefilter nodesToCheck by name occurring in both graphs
+        nodesToCheck = nodesToCheck.intersection(set(g1NodesDict.keys()))
+        nodesToCheck = nodesToCheck.intersection(set(g2NodesDict.keys()))
+
+        numMatches = 0
+        sumNormSizeMatches = 0.0
+
+        # Check similarity for all (prefiltered) packages
+        for pkgName in nodesToCheck:
+            pkg1Data = g1NodesDict[pkgName]
+            pkg2Data = g2NodesDict[pkgName]
             if (
                     # Version has to be the same
                     pkg1Data[VMIGraph.GNodeAttrVersion] == pkg2Data[VMIGraph.GNodeAttrVersion]
                     # Architecture has to be the same, or at least on has to say all
                     and (
-                        pkg1Data[VMIGraph.GNodeAttrArchitecture] == pkg2Data[VMIGraph.GNodeAttrArchitecture]
-                        or pkg1Data[VMIGraph.GNodeAttrArchitecture] == "all"
-                        or pkg2Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                            pkg1Data[VMIGraph.GNodeAttrArchitecture] == pkg2Data[VMIGraph.GNodeAttrArchitecture]
+                            or pkg1Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                            or pkg2Data[VMIGraph.GNodeAttrArchitecture] == "all"
                     )
-                ):
-                sum = sum +1
+            ):
+                numMatches = numMatches + 1
+                sumNormSizeMatches = sumNormSizeMatches\
+                                     + max(pkg1Data[VMIGraph.GNodeAttrInstallSize],
+                                           pkg2Data[VMIGraph.GNodeAttrInstallSize])/maxInstallSize
 
-        similarity = float(sum) / float(max(numG1Nodes, numG2Nodes))
-        print "Compared two Graphs:\n" \
-              "\tGraph 1: %i packages\n" \
-              "\tGraph 2: %i packages\n" \
-              "\t\t %i packages match in name, version and architecture\n" \
-              "\t\t similarity = %i/%i = %.3f"\
-              % (numG1Nodes, numG2Nodes, sum, sum, max(numG1Nodes, numG2Nodes), similarity)
+        similarity = float(sumNormSizeMatches) / float(sumNormSizeAll)
+
+        if onlyOnMainServices:
+            print "\nWeighted Comparison of two VMIs (Only on main services!):\n" \
+                  "\tGraph 1: %i packages\n" \
+                  "\tGraph 2: %i packages\n" \
+                  "\t\t %i main service related packages match in name, version and architecture\n" \
+                  "\t\t %i compared packages in total (union of main services from both VMIs)\n" \
+                  "\t\t similarity = %.3f/%.3f = %.3f" \
+                  % (numG1Nodes, numG2Nodes, numMatches, numAllNodes, sumNormSizeMatches, sumNormSizeAll, similarity)
+        else:
+            print "\nWeighted Comparison of two VMIs:\n" \
+                  "\tVMI 1: %i packages\n" \
+                  "\tVMI 2: %i packages\n" \
+                  "\t\t %i packages match in name, version and architecture\n" \
+                  "\t\t similarity = %i/%i = %.3f" \
+                  % (numG1Nodes, numG2Nodes, numMatches, sumNormSizeMatches, numAllNodes, similarity)
         return similarity
 
     @staticmethod
-    def computeSimilarity(pathToVMI1, mainServices1, pathToVMI2, mainServices2, onlyOnMainServices=False):
+    def computeSimilarityBetweenVMIs(pathToVMI1, mainServices1, pathToVMI2, mainServices2, onlyOnMainServices):
+
         # Create Descriptors/Graphs for each VMI
         print "\n=== Creating Descriptor for VMI \"%s\"" % (pathToVMI1)
         (guest, root) = GuestFSHelper.getHandler(pathToVMI1, rootRequired=True)
@@ -133,16 +235,5 @@ class Mapping:
         Mapping.checkMainServicesExistence(vmi2, mainServices2)
 
         # Compute Similarity
-        graphSimilarity = 0.0
-        if Mapping.checkCompatibility(vmi1, vmi2):
-            if onlyOnMainServices:
-                graphSimilarity = Mapping.getSimilarityBetweenNodeDicts(
-                    vmi1.getNodeDataFromSubTrees(mainServices1),
-                    vmi2.getNodeDataFromSubTrees(mainServices2)
-                )
-            else:
-                graphSimilarity = Mapping.getSimilarityBetweenNodeDicts(
-                    vmi1.getNodeData(),
-                    vmi2.getNodeData()
-                )
+        graphSimilarity = Mapping.computeSimilarityBetweenVMIDescriptorsWithWeights(vmi1, vmi2, onlyOnMainServices)
         return graphSimilarity

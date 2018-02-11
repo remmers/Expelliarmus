@@ -14,6 +14,7 @@ class BaseImageDescriptor():
         self.architecture = None
         self.pkgManager = None
         self.graph = None  # type: nx.MultiDiGraph
+        self.graphFileName = None
 
 
     def initializeNew(self, guest, root):
@@ -31,14 +32,21 @@ class BaseImageDescriptor():
         self.distributionVersion = distributionVersion
         self.architecture = architecture
         self.pkgManager = pkgManager
+        self.graphFileName = graphFileName
         self.graph = nx.read_gpickle(graphFileName)
 
-    def saveGraphTo(self, path):
-        nx.write_gpickle(self.graph, path)
+    def saveGraph(self):
+        graphPath = "_".join(self.pathToVMI.rsplit(".",1)) + ".pkl"
+        #graphPath = "".join(self.pathToVMI.split(".")[:-1]) + ".pkl"
+        nx.write_gpickle(self.graph, graphPath)
+        self.graphFileName = graphPath
 
     def getNodeData(self):
         assert (self.graph != None)
         return dict((pkgName, pkgInfo) for (pkgName, pkgInfo) in self.graph.nodes(data=True))
+
+    def getNumberOfPackages(self):
+        return len(self.graph)
 
     def getSubGraphFromRoots(self, rootNodeList):
         nodeList = list()
@@ -68,6 +76,45 @@ class BaseImageDescriptor():
                 ret.append(node)
         return ret
 
+    def getInstallSizeOfAllePackages(self):
+        sum = 0
+        for pkg,pkgInfo in self.getNodeData().iteritems():
+            sum = sum + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+        return sum
+
+    def checkCompatibilityForPackages(self, packageDict):
+        """
+        :param dict() packageDict:
+                in the form of dict{pkgName, pkgInfo} with pkgInfo = dict{version:?, Arch:?,...}
+        :return:
+        """
+        graphNodeData = self.getNodeData()
+        if packageDict is None:
+            return True
+        for pkg2Name,pkg2Data in packageDict.iteritems():
+            if pkg2Name in graphNodeData:
+                # pkg2 is in graph, version and architecture has to match, otherwise return False:
+                pkg1Data = graphNodeData[pkg2Name]
+                if not (
+                        # Version has to be the same
+                        pkg1Data[VMIGraph.GNodeAttrVersion] == pkg2Data[VMIGraph.GNodeAttrVersion]
+                        # Architecture has to be the same, or at least on has to say all
+                        and (
+                            pkg1Data[VMIGraph.GNodeAttrArchitecture] == pkg2Data[
+                            VMIGraph.GNodeAttrArchitecture]
+                            or pkg1Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                            or pkg2Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                        )
+                ):
+                    print "Failed Compatibility Check"
+                    print "failed on package:"
+                    print "\t" + pkg2Name
+                    print "\t" + pkg1Data[VMIGraph.GNodeAttrVersion] + " vs " + pkg2Data[VMIGraph.GNodeAttrVersion]
+                    print "\t" + pkg1Data[VMIGraph.GNodeAttrArchitecture] + " vs " + pkg2Data[VMIGraph.GNodeAttrArchitecture]
+                    return False
+        return True
+
+
 class VMIDescriptor(BaseImageDescriptor):
     def __init__(self, pathToVMI, vmiName, mainServices, guest, root):
         super(VMIDescriptor, self).__init__(pathToVMI)
@@ -83,6 +130,9 @@ class VMIDescriptor(BaseImageDescriptor):
             )
             for mainService in self.mainServices
         ]
+
+    def getNodeDataFromMainServicesSubtrees(self):
+        return self.getNodeDataFromSubTrees(self.mainServices)
 
     def getBaseImageDescriptor(self, guest, root):
         base = BaseImageDescriptor(self.pathToVMI)
