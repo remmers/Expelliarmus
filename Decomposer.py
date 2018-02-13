@@ -1,7 +1,6 @@
 import sys
-
+import time
 import shutil
-
 import os
 from collections import defaultdict
 
@@ -11,6 +10,8 @@ from StaticInfo import StaticInfo
 from VMIDescription import BaseImageDescriptor, VMIDescriptor
 from VMIGraph import VMIGraph
 from VMIManipulation import VMIManipulator
+from VMISimilarity import SimilarityCalculator
+
 
 class Decomposer:
 
@@ -26,7 +27,7 @@ class Decomposer:
                     sys.exit("Error: Main Service \"" + pkgName + "\" does not exist in " + vmi.vmiName)
 
     @staticmethod
-    def exportPackages(vmi, manipulator):
+    def exportPackages(vmi, manipulator, evalDecomp=None):
         """
 
         :return: returns BaseImage instance
@@ -71,8 +72,11 @@ class Decomposer:
             # Update Repository Database
             with RepositoryDatabase() as repoManager:
                 repoManager.addPackageList(packageInfoList)
-
-        return sumSizesReqPkgs,sumSizesExpPkgs
+        if evalDecomp is not None:
+            evalDecomp.reqPkgsNum = numAllPackages
+            evalDecomp.expPkgsNum = numReqPackages
+            evalDecomp.reqPkgsSize = sumSizesReqPkgs
+            evalDecomp.expPkgsSize = sumSizesExpPkgs
 
     @staticmethod
     def removePackages(vmi, manipulator, guest, root):
@@ -90,7 +94,7 @@ class Decomposer:
         return baseImage
 
     @staticmethod
-    def decompose(pathToVMI, vmiName, mainServices):
+    def decompose(pathToVMI, vmiName, mainServices, evalSimToMaster=None, evalDecomp=None):
         print "\n=== Decompose VMI \"%s\"\nFilename: \"%s\"" % (vmiName, pathToVMI)
 
         if not os.path.isfile(pathToVMI):
@@ -111,20 +115,29 @@ class Decomposer:
               % (vmi.distribution, vmi.distributionVersion, vmi.architecture, vmi.pkgManager)
 
         Decomposer.checkMainServicesExistence(vmi)
-        # Construct Dependency lists
-        mainServicesDepList = vmi.getMainServicesDepList()
-        # Construct Dict that holds all required packages
-        mainServicesPkgDict = vmi.getNodeDataFromMainServicesSubtrees()
 
+        # Check Similarity with all mastergraphs in repository
+        Decomposer.compareWithMasterGraphs(vmi, evalSimToMaster=evalSimToMaster)
+
+        # Construct Dependency lists
+        MSDepList = vmi.getMainServicesDepList()
+
+        # Construct subgraph for main services
+        MSSubGraph = vmi.getSubGraphForMainServices()
+
+        # Construct Dict that holds all required packages
+        MSPkgDict = vmi.getNodeDataFromMainServicesSubtrees()
         # in the form of [(root,dict{nodeName:dict{nodeAttributes}})]
         # Note: root is mainservice and part of the dict
+
+        newMainServices = vmi.mainServices
 
 
         # Export and remove Packages from VMI and its graph
         # after this, vmiDescriptor "vmi" becomes invalid!
         # summed sizes of required and exported packages are saved for evaluation
         manipulator = VMIManipulator.getVMIManipulator(vmi.pathToVMI, vmi.vmiName, guest, root)
-        sumSizesReqPkgs, sumSizesExpPkgs = Decomposer.exportPackages(vmi, manipulator)
+        Decomposer.exportPackages(vmi, manipulator, evalDecomp=evalDecomp)
         newBaseImage = Decomposer.removePackages(vmi, manipulator, guest, root)
 
         # Export and remove User Directory
@@ -137,9 +150,6 @@ class Decomposer:
 
         GuestFSHelper.shutdownHandler(guest)
 
-        # for evaluation purposes
-        baseImageTreatmentString = ""
-
         with RepositoryDatabase() as repoManager:
             # Decide which baseImage to keep
             print "Base Image Storage:"
@@ -148,9 +158,10 @@ class Decomposer:
                                                                                                        newBaseImage.distributionVersion,
                                                                                                        newBaseImage.architecture,
                                                                                                        newBaseImage.pkgManager)
-            (chosenBaseImage,replacingList) = Decomposer.chooseBaseImage(newBaseImage,mainServicesPkgDict,
+            (chosenBaseImage,replacingList) = Decomposer.chooseBaseImage(newBaseImage,MSPkgDict,
                                                                          existingBaseImagesWithCompatiblePackages)
 
+            chosenBaseImageOrigFileName = chosenBaseImage.pathToVMI.split("/")[-1]
 
             # new base image will remain and possibly replace existing base images
             if chosenBaseImage == newBaseImage:
@@ -160,24 +171,21 @@ class Decomposer:
                     for oldBaseImage in replacingList:
                         print "\t\t" + oldBaseImage.pathToVMI
 
-                    # for evaluation purposes
-                    replacedBaseImagesString = ""
-                    for b in replacingList:
-                        replacedBaseImagesString = replacedBaseImagesString + b.pathToVMI.split("/")[-1] + ","
-                    baseImageTreatmentString = "\"%s\" replaces \"%s\"" % (chosenBaseImage.pathToVMI.split("/")[-1], replacedBaseImagesString[:-1])
                 else:
                     print "\tNo compatible base images found in repository."
 
                 # Move new base image to local repository
                 Decomposer.moveBaseImageToRepository(chosenBaseImage)
 
-                # for evaluation purposes
-                if len(replacingList) == 0:
-                    baseImageTreatmentString = "New base image added as \"%s\"" % chosenBaseImage.pathToVMI.split("/")[-1]
-
-                # Save base image graph and add BaseImage to repository
+                # Save base image graph
                 chosenBaseImage.saveGraph()
-                chosenBaseImageID = repoManager.addBaseImage(chosenBaseImage)
+
+                # Create and save new master graph
+                masterDescriptor = chosenBaseImage.getVMIMasterDescriptor()
+                masterDescriptor.saveGraph()
+
+                # add BaseImage to repository
+                chosenBaseImageID = repoManager.addBaseImage(chosenBaseImage, masterDescriptor.graphFileName)
 
             else:
                 print "\tThe new VMI is compatible with the following existing base image which will be used instead of the original."
@@ -187,13 +195,7 @@ class Decomposer:
                     for oldBaseImage in replacingList:
                         print "\t\t" + oldBaseImage.pathToVMI
                 chosenBaseImageID = repoManager.getBaseImageId(chosenBaseImage.pathToVMI)
-
-                # for evaluation purposes
-                replacedBaseImagesString = ""
-                for b in replacingList:
-                    replacedBaseImagesString = replacedBaseImagesString + b.pathToVMI.split("/")[-1] + ","
-                baseImageTreatmentString = "\"%s\" replaces \"%s\"" % (
-                chosenBaseImage.pathToVMI.split("/")[-1], replacedBaseImagesString[:-1])
+                masterDescriptor = repoManager.getVMIMasterDescriptorFromBaseID(chosenBaseImageID)
 
             # Add VMI info to repository
             vmiID = repoManager.addVMI(vmi.vmiName,
@@ -201,22 +203,38 @@ class Decomposer:
                                        chosenBaseImageID)
 
             # add VMI's main services and its dependencies to repository
-            repoManager.addMainServicesDepListForVMI(vmiID, chosenBaseImage.distribution, mainServicesDepList)
+            repoManager.addMainServicesDepListForVMI(vmiID, chosenBaseImage.distribution, MSDepList)
 
-            # Replace base images in database
-            repoManager.replaceBaseImages(chosenBaseImage, replacingList)
+            # add new main services and dependencies to mastergraph
+            masterDescriptor.addSubGraph(newMainServices, MSSubGraph)
 
-            # Remove old base images and their graphs from repository
+            # add main services and dependencies mastergraphs that will be replaced
             for oldBaseImage in replacingList:
-                os.remove(oldBaseImage.pathToVMI)
-                # only happens if base image of new VMI is discarded (graph was never saved)
-                if oldBaseImage.graphFileName is not None:
-                    os.remove(oldBaseImage.graphFileName)
+                if oldBaseImage != newBaseImage:
+                    oldBaseImageID = repoManager.getBaseImageId(oldBaseImage.pathToVMI)
+                    masterDescriptor.addSubGraph(repoManager.getMainServicesForBaseImage(oldBaseImageID),
+                                                 repoManager.getVMIMasterDescriptorFromBaseID(oldBaseImageID).getSubGraphForMainServices())
+            masterDescriptor.saveGraph()
+
+            # Replace base images in database (also removes old images and graphs from filesystem)
+            repoManager.replaceAndRemoveBaseImages(chosenBaseImage, replacingList)
+
             print "\nVMI successfully decomposed and added to repository."
 
+            # for evaluation purposes
+            if evalSimToMaster is not None:
+                evalSimToMaster.chosenBaseImage = chosenBaseImageOrigFileName
 
-
-        return sumSizesReqPkgs,sumSizesExpPkgs,baseImageTreatmentString
+            if evalDecomp is not None:
+                if len(replacingList) > 0:
+                    replacedBaseImagesString = ""
+                    for b in replacingList:
+                        replacedBaseImagesString = replacedBaseImagesString + b.pathToVMI.split("/")[-1] + ","
+                    baseImageTreatmentString = "\"%s\" replaces \"%s\"" % (chosenBaseImageOrigFileName,
+                                                                           replacedBaseImagesString[:-1])
+                else:
+                    baseImageTreatmentString = "New base image added as \"%s\"" % chosenBaseImage.pathToVMI.split("/")[-1]
+                evalDecomp.baseImageInfo = baseImageTreatmentString
 
 
     @staticmethod
@@ -279,9 +297,11 @@ class Decomposer:
             # by column
             for b2 in allBaseImagesDict.keys():
                 # if same or compatible
-                #if b1 == newBaseImage:
-                    #print "=============================\nChecking Compatibility from new image with \"%s\"" % b2.pathToVMI
-                    #print "============================="
+                if b1 == newBaseImage:
+                    compatibilities[b1]["new"] = 1
+                else:
+                    compatibilities[b1]["new"] = 0
+
                 if b1 == b2 or b1.checkCompatibilityForPackages(allBaseImagesDict[b2]):
                     compatibilities[b1][b2] = True
                     compatibilities[b1]["count"] = compatibilities[b1]["count"] + 1
@@ -292,7 +312,12 @@ class Decomposer:
             #print rowString
 
         # sort base images by count (number of base images it is compatible for)
-        sortedBaseImages = sorted(compatibilities.keys(), key=lambda baseImage: (-compatibilities[baseImage]["count"],baseImage.getNumberOfPackages()))
+        sortedBaseImages = sorted(compatibilities.keys(),
+                                  key=lambda baseImage: (
+                                      -compatibilities[baseImage]["count"],
+                                      baseImage.getNumberOfPackages(),
+                                      compatibilities[b1]["new"]
+                                  ))
         #print "Sorted base images by 1. incr. comp count, 2. decr. #(pkgs)"
         #for baseImage in sortedBaseImages:
         #    print baseImage.pathToVMI + "\t" + str(baseImage.getNumberOfPackages())
@@ -310,10 +335,38 @@ class Decomposer:
         # Worst case, no replacing possible, should be handled in while above
         return (newBaseImage,list())
 
+    @staticmethod
+    def compareWithMasterGraphs(vmi, evalSimToMaster=None):
+        print "Comparison to mastergraphs:"
+        if evalSimToMaster is not None:
+            evalSimToMaster.vmiFilename = vmi.vmiName
+            evalSimToMaster.vmiMainServices = vmi.mainServices
+            startTime = time.time()
+            simAndMasterList = list()
+            with RepositoryDatabase() as repoManager:
+                masterDescriptors = repoManager.getVMIMasterDescriptors()
+                for master in masterDescriptors:
+                    similarity = SimilarityCalculator.computeWeightedSimilarityBetweenVMIDescriptors(vmi, master,
+                                                                                                     onlyOnMainServices=True,
+                                                                                                     verbose=False)
+                    print "\tMastergraph:\t" + master.graphFileName
+                    print "\tSimilarity:\t\t%0.2f\n" % similarity
+                    simAndMasterList.append((similarity,master))
+            timeToCalc = time.time() - startTime
+            evalSimToMaster.timToCalc = timeToCalc
+            evalSimToMaster.setSimilarity(simAndMasterList)
 
+        else:
+            with RepositoryDatabase() as repoManager:
+                masterDescriptors = repoManager.getVMIMasterDescriptors()
+                for master in masterDescriptors:
+                    similarity = SimilarityCalculator.computeWeightedSimilarityBetweenVMIDescriptors(vmi, master,
+                                                                                                     onlyOnMainServices=True,
+                                                                                                     verbose=False)
+                    print "\tMastergraph:\t" + master.graphFileName
+                    print "\tSimilarity:\t\t%0.2f\n" % similarity
 
-
-    # right now not required
+    # deprecated, right now not required
     @staticmethod
     def onlyExportMainService(pathToVMI, mainServices):
         print "\n=== Export %s from VMI \"%s\"" % (mainServices, pathToVMI)

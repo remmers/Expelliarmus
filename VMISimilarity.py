@@ -1,11 +1,13 @@
 import sys
+from collections import defaultdict
 
+from StaticInfo import StaticInfo
 from GuestFSHelper import GuestFSHelper
 from VMIDescription import VMIDescriptor
 from VMIGraph import VMIGraph
 from VMIManipulation import VMIManipulator
 
-class Mapping:
+class SimilarityCalculator:
     @staticmethod
     def checkMainServicesExistence(vmiDescriptor1,mainServices):
         for pkgName in mainServices:
@@ -106,7 +108,7 @@ class Mapping:
         return similarity
 
     @staticmethod
-    def computeSimilarityBetweenVMIDescriptorsWithWeights(vmi1, vmi2, onlyOnMainServices):
+    def computeWeightedSimilarityBetweenVMIDescriptors(vmi1, vmi2, onlyOnMainServices, verbose=True):
         """
         :param VMIDescriptor vmi1:
         :param VMIDescriptor vmi2:
@@ -199,25 +201,26 @@ class Mapping:
 
         similarity = float(sumNormSizeMatches) / float(sumNormSizeAll)
 
-        if onlyOnMainServices:
-            print "\nWeighted Comparison of two VMIs (Only on main services!):\n" \
-                  "\tGraph 1: %i packages\n" \
-                  "\tGraph 2: %i packages\n" \
-                  "\t\t %i main service related packages match in name, version and architecture\n" \
-                  "\t\t %i compared packages in total (union of main services from both VMIs)\n" \
-                  "\t\t similarity = %.3f/%.3f = %.3f" \
-                  % (numG1Nodes, numG2Nodes, numMatches, numAllNodes, sumNormSizeMatches, sumNormSizeAll, similarity)
-        else:
-            print "\nWeighted Comparison of two VMIs:\n" \
-                  "\tVMI 1: %i packages\n" \
-                  "\tVMI 2: %i packages\n" \
-                  "\t\t %i packages match in name, version and architecture\n" \
-                  "\t\t similarity = %i/%i = %.3f" \
-                  % (numG1Nodes, numG2Nodes, numMatches, sumNormSizeMatches, numAllNodes, similarity)
+        if verbose:
+            if onlyOnMainServices:
+                print "\nWeighted Comparison of two VMIs (Only on main services!):\n" \
+                      "\tGraph 1: %i packages\n" \
+                      "\tGraph 2: %i packages\n" \
+                      "\t\t %i main service related packages match in name, version and architecture\n" \
+                      "\t\t %i compared packages in total (union of main services from both VMIs)\n" \
+                      "\t\t similarity = %.3f/%.3f = %.3f" \
+                      % (numG1Nodes, numG2Nodes, numMatches, numAllNodes, sumNormSizeMatches, sumNormSizeAll, similarity)
+            else:
+                print "\nWeighted Comparison of two VMIs:\n" \
+                      "\tVMI 1: %i packages\n" \
+                      "\tVMI 2: %i packages\n" \
+                      "\t\t %i packages match in name, version and architecture\n" \
+                      "\t\t similarity = %i/%i = %.3f" \
+                      % (numG1Nodes, numG2Nodes, numMatches, sumNormSizeMatches, numAllNodes, similarity)
         return similarity
 
     @staticmethod
-    def computeSimilarityBetweenVMIs(pathToVMI1, mainServices1, pathToVMI2, mainServices2, onlyOnMainServices):
+    def computeSimilarityOneToOne(pathToVMI1, mainServices1, pathToVMI2, mainServices2, onlyOnMainServices):
 
         # Create Descriptors/Graphs for each VMI
         print "\n=== Creating Descriptor for VMI \"%s\"" % (pathToVMI1)
@@ -231,9 +234,71 @@ class Mapping:
         GuestFSHelper.shutdownHandler(guest)
 
         # Check if Main Services exist
-        Mapping.checkMainServicesExistence(vmi1, mainServices1)
-        Mapping.checkMainServicesExistence(vmi2, mainServices2)
+        SimilarityCalculator.checkMainServicesExistence(vmi1, mainServices1)
+        SimilarityCalculator.checkMainServicesExistence(vmi2, mainServices2)
 
         # Compute Similarity
-        graphSimilarity = Mapping.computeSimilarityBetweenVMIDescriptorsWithWeights(vmi1, vmi2, onlyOnMainServices)
+        graphSimilarity = SimilarityCalculator.computeWeightedSimilarityBetweenVMIDescriptors(vmi1, vmi2, onlyOnMainServices)
         return graphSimilarity
+
+    @staticmethod
+    def computeSimilarityManyToMany(vmisAndMS, onlyOnMainServices):
+        if onlyOnMainServices:
+            print "=====Calculating similarities between each of %i VMIs" % len(vmisAndMS)
+        else:
+            print "=====Calculating similarities with respect to main services between each of %i VMIs" % len(vmisAndMS)
+
+        sortedVMIDescriptorList = list()
+        i = 0
+        for (vmiFileName,mainServices) in vmisAndMS:
+            i = i + 1
+            print "Creating Descriptor for vmi \"%s\" (%i/%i)..." % (vmiFileName, i, len(vmisAndMS))
+            pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName
+            (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+            vmi = VMIDescriptor(pathToVMI, vmiFileName, mainServices, guest, root)
+            GuestFSHelper.shutdownHandler(guest)
+            sortedVMIDescriptorList.append(vmi)
+
+        similarities = defaultdict(dict)
+        for vmi1 in sortedVMIDescriptorList:
+            print "Similarities for VMI \"%s\":" % vmi1.vmiName
+            for vmi2 in sortedVMIDescriptorList:
+                if vmi1.pathToVMI == vmi2.pathToVMI:
+                    similarities[vmi1.vmiName][vmi2.vmiName] = None
+                else:
+                    # Check if Main Services exist
+                    SimilarityCalculator.checkMainServicesExistence(vmi1, vmi1.mainServices)
+                    SimilarityCalculator.checkMainServicesExistence(vmi2, vmi2.mainServices)
+
+                    sim = SimilarityCalculator.computeWeightedSimilarityBetweenVMIDescriptors(vmi1, vmi2,
+                                                                                              onlyOnMainServices, verbose=False)
+                    similarities[vmi1.vmiName][vmi2.vmiName] = sim
+                    print "\t%0.2f similarity to VMI \"%s\"" % (sim,vmi2.vmiName)
+        return similarities
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

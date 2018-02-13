@@ -5,7 +5,7 @@ import sqlite3
 import shutil
 
 from StaticInfo import StaticInfo
-from VMIDescription import BaseImageDescriptor
+from VMIDescription import BaseImageDescriptor, VMIMasterDescriptor
 from VMIGraph import VMIGraph
 
 
@@ -71,7 +71,8 @@ class RepositoryDatabase:
                 architecture  TEXT    NOT NULL,
                 pkgManager    TEXT    NOT NULL,
                 filename      TEXT    NOT NULL,
-                graphPath     TEXT    NOT NULL);
+                graphPath     TEXT    NOT NULL,
+                masterGraphPath TEXT  NOT NULL);
                 ''')
         self.db.commit()
 
@@ -240,72 +241,21 @@ class RepositoryDatabase:
         else:
             return None
 
-    def updateBaseImage(self, baseID, baseImage, ):
-        """
-        :param baseID:
-        :param BaseImageDescriptor baseImage:
-        :return:
-        """
-        self.cursor.execute('''
-                    UPDATE baseImageRepository
-                    SET distribution = ?,
-                        version = ?,
-                        architecture = ?,
-                        pkgManager = ?,
-                        filename = ?,
-                        graphPath = ?
-                    WHERE baseID = ?
-                    ''',
-                    (baseImage.distribution,baseImage.distributionVersion,baseImage.architecture,baseImage.pkgManager,
-                            baseImage.pathToVMI,baseImage.graphFileName, baseID))
-        self.db.commit()
-
-    def addBaseImage(self, baseImage):
+    def addBaseImage(self, baseImage, masterGraphPath):
         # Insert new Base Image
         self.cursor.execute('''
-                        INSERT INTO baseImageRepository (distribution, version,architecture, pkgManager,filename, graphPath)
-                        VALUES (?,?,?,?,?,?)''',
+                        INSERT INTO baseImageRepository (distribution, version,architecture, pkgManager,filename, graphPath, masterGraphPath)
+                        VALUES (?,?,?,?,?,?,?)''',
                             (baseImage.distribution,
                              baseImage.distributionVersion,
                              baseImage.architecture,
                              baseImage.pkgManager,
                              baseImage.pathToVMI,
-                             baseImage.graphFileName))
+                             baseImage.graphFileName,
+                             masterGraphPath))
         self.db.commit()
         # Return id
         return self.getBaseImageId(baseImage.pathToVMI)
-
-    # deprecated, only one base image possible
-    def tryAddBaseImageOLD(self, baseImage):
-        self.cursor.execute('''
-            SELECT baseID
-            FROM baseImageRepository
-            WHERE filename=?''',
-            (baseImage.pathToVMI,)
-        )
-        result = self.cursor.fetchall()
-        if len(result) > 1:
-            print("ERROR in database: multiple Base Images with same filename exist:\n" \
-                  "\tpkgIDs: " + str(result) + "\n\tsolve manually!")
-            return result[0][0]
-        elif len(result) == 1:
-            print("ERROR in database: A Base Images with same filename already exists:\n" \
-                  "\tpkgIDs: " + str(result) + "\n\tsolve manually!")
-            return result[0][0]
-        else:
-            # Insert new Base Image
-            self.cursor.execute('''
-                            INSERT INTO baseImageRepository (distribution, version,architecture, pkgManager,filename, graphPath)
-                            VALUES (?,?,?,?,?,?)''',
-                                (baseImage.distribution,
-                                 baseImage.distributionVersion,
-                                 baseImage.architecture,
-                                 baseImage.pkgManager,
-                                 baseImage.pathToVMI,
-                                 baseImage.graphFileName))
-            self.db.commit()
-            # Return id
-            return self.getBaseImageId(baseImage.pathToVMI)
 
     def removeBaseImage(self, baseID):
         self.cursor.execute('''
@@ -371,20 +321,6 @@ class RepositoryDatabase:
         else:
             return list()
 
-    def getFileInfosForBaseID(self, baseID):
-        self.cursor.execute('''
-                SELECT filename,graphPath
-                FROM baseImageRepository
-                WHERE baseID = ?
-            ''',
-            (baseID,)
-            )
-        result = self.cursor.fetchall()
-        if len(result) == 1:
-            return str(result[0][1]),str(result[0][0])
-        else:
-            return None
-
     def getBaseImageIDsWith(self, distribution, version, architecture, pkgManager):
         self.cursor.execute('''
                     SELECT baseID
@@ -441,7 +377,40 @@ class RepositoryDatabase:
             baseImage.initializeFromRepo(info[0], info[1], info[2], info[3], info[5])
             return baseImage
         else:
-            return (None,None)
+            return None
+
+    def getVMIMasterDescriptorFromBaseID(self, baseID):
+        self.cursor.execute('''
+                            SELECT distribution,version,architecture,pkgManager,filename,masterGraphPath
+                            FROM baseImageRepository
+                            WHERE baseID = ?
+                            ''',
+                            (baseID,)
+                            )
+        result = self.cursor.fetchall()
+        if len(result) == 1:
+            info = [str(col) for col in
+                    result[0]]  # -> returns [distribution,version,architecture,pkgManager,filename,masterGraphPath]
+            master = VMIMasterDescriptor(info[4])
+            master.initializeMasterFromRepo(info[0], info[1], info[2], info[3], info[5], self.getMainServicesForBaseImage(baseID))
+            return master
+        else:
+            return None
+
+    def getVMIMasterDescriptors(self):
+        self.cursor.execute('''
+                SELECT baseID
+                FROM baseImageRepository
+                '''
+        )
+        result = self.cursor.fetchall()
+        baseIDs = [ int(row[0]) for row in result]
+        masterDescriptors = list()
+        for baseID in baseIDs:
+            tmp = self.getVMIMasterDescriptorFromBaseID(baseID)
+            if tmp is not None:
+                masterDescriptors.append(tmp)
+        return masterDescriptors
 
     def getNumberOfBaseImagesWith(self,distribution,version,architecture,pkgManager):
         self.cursor.execute('''
@@ -478,15 +447,48 @@ class RepositoryDatabase:
             baseImagesAndCompatiblePackages[baseImage] = self.getCompPkgDictForBaseImageID(baseID)
         return baseImagesAndCompatiblePackages
 
-    def replaceBaseImages(self, newBaseImage, baseImagesToReplace):
+    def getMainServicesForBaseImage(self,baseID):
+        self.cursor.execute('''
+                    SELECT name
+                    FROM PackageRepository
+                    WHERE pkgID IN(
+                        SELECT DISTINCT pkgID
+                        FROM PackageDependencies
+                        WHERE vmiID IN (
+                            SELECT vmiID
+                            FROM vmiRepository
+                            WHERE baseImageID = ?
+                        )
+                    )''',
+                            (baseID,)
+                            )
+        result = self.cursor.fetchall()
+        if len(result) == 1:
+            return [str(row[0]) for row in result]
+        else:
+            return []
+
+    def replaceAndRemoveBaseImages(self, newBaseImage, baseImagesToReplace):
         newBaseID = self.getBaseImageId(newBaseImage.pathToVMI)
         if newBaseID == None:
-            sys.exit("ERROD in Database: Trying to replace base images with new base image that is not found in database")
+            sys.exit("ERROR in Database: Trying to replace base images with new base image that is not found in database")
 
-        # update VMIs to use new Base image and remove old one
+        # update VMIs to use new Base image and remove old ones
         for oldBase in baseImagesToReplace:
             oldBaseID = self.getBaseImageId(oldBase.pathToVMI)
+
+            # remove base image and graph files
+            if os.path.isfile(oldBase.pathToVMI):
+                os.remove(oldBase.pathToVMI)
+            if oldBase.graphFileName is not None and os.path.isfile(oldBase.graphFileName):
+                os.remove(oldBase.graphFileName)
+
             if oldBaseID is not None:
+                masterGraphFileName = self.getVMIMasterDescriptorFromBaseID(oldBaseID).graphFileName
+                if os.path.isfile(masterGraphFileName):
+                    os.remove(masterGraphFileName)
+
+                # update VMIs to use new base image and remove old base image
                 self.updateVMIs(oldBaseID,newBaseID)
                 self.removeBaseImage(oldBaseID)
 
@@ -674,7 +676,7 @@ class RepositoryDatabase:
             self.getDepPkgInfoSetForVMI(vmiID)
         )
 
-    def getAllVMIs(self):
+    def getDataForAllVMIs(self):
         vmiDataList = list()
         self.cursor.execute('''
             SELECT vmiID, name
@@ -697,6 +699,21 @@ class RepositoryDatabase:
             vmiDataList.append(vmiData)
         return vmiDataList
 
+    def getAllVmiNames(self):
+        """
+        :return: vmiNames ordered the way they were added
+        """
+        vmiDataList = list()
+        self.cursor.execute('''
+            SELECT name
+            FROM vmiRepository
+            ORDER BY vmiID ASC
+            '''
+        )
+        result = self.cursor.fetchall()
+        vmiNames = list( str(row[0]) for row in result)
+
+        return vmiNames
 
 
 

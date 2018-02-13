@@ -1,5 +1,6 @@
 from abc import ABCMeta, abstractmethod
 import networkx as nx
+import os
 
 from GuestFSHelper import GuestFSHelper
 from VMIGraph import VMIGraph
@@ -36,10 +37,17 @@ class BaseImageDescriptor():
         self.graph = nx.read_gpickle(graphFileName)
 
     def saveGraph(self):
-        graphPath = "_".join(self.pathToVMI.rsplit(".",1)) + ".pkl"
-        #graphPath = "".join(self.pathToVMI.split(".")[:-1]) + ".pkl"
-        nx.write_gpickle(self.graph, graphPath)
-        self.graphFileName = graphPath
+        if self.graphFileName is None:
+            self.graphFileName = "_".join(self.pathToVMI.rsplit(".",1)) + ".pkl"
+        if os.path.isfile(self.graphFileName):
+            os.remove(self.graphFileName)
+        nx.write_gpickle(self.graph, self.graphFileName)
+
+    def getVMIMasterDescriptor(self):
+        master = VMIMasterDescriptor(self.pathToVMI)
+        master.createNew(self.distribution, self.distributionVersion,
+                         self.architecture, self.pkgManager, self.graph, [])
+        return master
 
     def getNodeData(self):
         assert (self.graph != None)
@@ -51,8 +59,14 @@ class BaseImageDescriptor():
     def getSubGraphFromRoots(self, rootNodeList):
         nodeList = list()
         for name in rootNodeList:
+            nodeList = nodeList + list(nx.bfs_tree(self.graph, name))
+        return nx.MultiDiGraph(self.graph.subgraph(nodeList))
+
+    def getSubGraphFromRootsOLD(self, rootNodeList):
+        nodeList = list()
+        for name in rootNodeList:
             nodeList.append(nx.bfs_tree(self.graph, name))
-        return self.graph.subgraph(nodeList)
+        return nx.MultiDiGraph(self.graph.subgraph(nodeList))
 
     def getNodeDataFromSubTree(self, rootNode):
         nodeList = nx.bfs_tree(self.graph, rootNode)
@@ -82,7 +96,7 @@ class BaseImageDescriptor():
             sum = sum + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
         return sum
 
-    def checkCompatibilityForPackages(self, packageDict):
+    def checkCompatibilityForPackages(self, packageDict, verbose=False):
         """
         :param dict() packageDict:
                 in the form of dict{pkgName, pkgInfo} with pkgInfo = dict{version:?, Arch:?,...}
@@ -106,11 +120,12 @@ class BaseImageDescriptor():
                             or pkg2Data[VMIGraph.GNodeAttrArchitecture] == "all"
                         )
                 ):
-                    print "Failed Compatibility Check"
-                    print "failed on package:"
-                    print "\t" + pkg2Name
-                    print "\t" + pkg1Data[VMIGraph.GNodeAttrVersion] + " vs " + pkg2Data[VMIGraph.GNodeAttrVersion]
-                    print "\t" + pkg1Data[VMIGraph.GNodeAttrArchitecture] + " vs " + pkg2Data[VMIGraph.GNodeAttrArchitecture]
+                    if verbose:
+                        print "Failed Compatibility Check"
+                        print "failed on package:"
+                        print "\t" + pkg2Name
+                        print "\t" + pkg1Data[VMIGraph.GNodeAttrVersion] + " vs " + pkg2Data[VMIGraph.GNodeAttrVersion]
+                        print "\t" + pkg1Data[VMIGraph.GNodeAttrArchitecture] + " vs " + pkg2Data[VMIGraph.GNodeAttrArchitecture]
                     return False
         return True
 
@@ -134,7 +149,56 @@ class VMIDescriptor(BaseImageDescriptor):
     def getNodeDataFromMainServicesSubtrees(self):
         return self.getNodeDataFromSubTrees(self.mainServices)
 
+    def getSubGraphForMainServices(self):
+        return self.getSubGraphFromRoots(self.mainServices)
+
     def getBaseImageDescriptor(self, guest, root):
         base = BaseImageDescriptor(self.pathToVMI)
         base.initializeNew(guest, root)
         return base
+
+class VMIMasterDescriptor(BaseImageDescriptor):
+    def __init__(self, pathToVMI):
+        super(VMIMasterDescriptor, self).__init__(pathToVMI)
+        self.mainServices = None
+
+    def createNew(self, distribution, distributionVersion, architecture, pkgManager, graph, mainServices):
+        self.distribution = distribution
+        self.distributionVersion = distributionVersion
+        self.architecture = architecture
+        self.pkgManager = pkgManager
+        self.graph = nx.MultiDiGraph(graph)
+        self.mainServices = set(mainServices)
+        self.graphFileName = None
+
+    def initializeMasterFromRepo(self, distribution, distributionVersion, architecture, pkgManager, graphFileName, mainServices):
+        self.distribution = distribution
+        self.distributionVersion = distributionVersion
+        self.architecture = architecture
+        self.pkgManager = pkgManager
+        self.graphFileName = graphFileName
+        self.graph = nx.read_gpickle(graphFileName)
+        self.mainServices = set(mainServices)
+
+    def saveGraph(self):
+        if self.graphFileName is None:
+            self.graphFileName = "_".join(self.pathToVMI.rsplit(".",1)) + "_MASTER.pkl"
+        if os.path.isfile(self.graphFileName):
+            os.remove(self.graphFileName)
+        nx.write_gpickle(self.graph, self.graphFileName)
+
+    def getSubGraphForMainServices(self):
+        return self.getSubGraphFromRoots(self.mainServices)
+
+    def getNodeDataFromMainServicesSubtrees(self):
+        return self.getNodeDataFromSubTrees(self.mainServices)
+
+    def addSubGraph(self, mainServices, newGraph):
+        # Check compatibility
+        newPkgDict = dict((pkgName, pkgInfo) for (pkgName, pkgInfo) in newGraph.nodes(data=True))
+        if not self.checkCompatibilityForPackages(newPkgDict):
+            print "ERROR in Mastergraph: trying to add packages that are not compatible to mastergraph!"
+            return False
+
+        self.graph = nx.compose(newGraph, self.graph)
+        self.mainServices = self.mainServices.union(set(mainServices))

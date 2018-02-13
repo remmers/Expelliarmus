@@ -1,6 +1,7 @@
 import sys
 import os
 import shutil
+import time
 
 from GuestFSHelper import GuestFSHelper
 from RepositoryDatabase import RepositoryDatabase
@@ -13,7 +14,7 @@ from VMIDescription import BaseImageDescriptor
 class Reassembler:
 
     @staticmethod
-    def reassemble(vmiName):
+    def reassemble(vmiName, evalReassembly=None):
         # TODO: reset image
         print "\n=== Reassemble VMI \"" + vmiName + "\""
 
@@ -36,20 +37,41 @@ class Reassembler:
 
 
         format = baseImage.pathToVMI.split(".")[-1]
-        pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + vmiName + "." + format
+        if vmiName.endswith(".qcow2") or vmiName.endswith(".img"):
+            pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + vmiName.rsplit(".",1)[0] + "." + format
+        else:
+            pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + vmiName + "." + format
 
         if os.path.isfile(pathToVMI):
             sys.exit("Error while reassembling VMI \"%s\". \"%s\" already exists. Was it reassembled before?" % (vmiName, pathToVMI))
 
 
         print "Copy of Base Image is being created..."
+        startTime = time.time()
         shutil.copy(baseImage.pathToVMI, pathToVMI)
+        copyTime = time.time() - startTime
 
+        # Create handler
+        startTime = time.time()
         (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+        handlerCreationTime = time.time() - startTime
+
         manipulator = VMIManipulator.getVMIManipulator(pathToVMI, vmiName, guest, root)
 
+        # Reset Image
+        #startTime = time.time()
+        #manipulator.resetImage()
+        #resetTime = time.time() - startTime
+
+        # Import Home
         manipulator.importHomeDir(userDirPath)
-        errorString = Reassembler.importPackages(manipulator, vmiName, baseImage, pathToVMI, mainServices, packageInfoSet)
+
+        # Import Packages
+        startTime = time.time()
+        errorString = Reassembler.importPackages(manipulator, baseImage, mainServices, packageInfoSet, evalReassembly=evalReassembly)
+        importTime = time.time() - startTime
+
+        GuestFSHelper.shutdownHandler(guest)
 
         if errorString is None:
             print "\nReassembling finished."
@@ -65,10 +87,22 @@ class Reassembler:
             print "\t           Log saved in: \"%s\"" % logFileName
             print "\t           VMI saved in: \"%s\"" % pathToVMI
 
+        if evalReassembly is not None:
+            evalReassembly.vmiFilename = pathToVMI.rsplit("/",1)[-1]
+            evalReassembly.vmiMainServices = mainServices
+            evalReassembly.pathToBase = baseImage.pathToVMI.rsplit("/",1)[-1]
+            evalReassembly.baseImageSize = os.path.getsize(baseImage.pathToVMI)
+            evalReassembly.copyTime = copyTime
+            evalReassembly.importTime = importTime
+            evalReassembly.handlerCreationTime = handlerCreationTime
+            if errorString is not None:
+                evalReassembly.info = "\"/dev/pts\" error while reassembling, check manually."
+
+        return pathToVMI
 
 
     @staticmethod
-    def importPackages(manipulator, vmiName, baseImage, pathToVMI, mainServices, packageInfoSet):
+    def importPackages(manipulator, baseImage, mainServices, packageInfoSet, evalReassembly=None):
 
         numAllPackages = len(packageInfoSet)
 
@@ -92,7 +126,10 @@ class Reassembler:
               "Package(s) to be imported:\t%i" \
               % (",".join(mainServices), numAllPackages, numAllPackages - numReqPackages, numReqPackages)
 
-
         errorString = manipulator.importPackages(mainServices, packageFileNames)
+
+        if evalReassembly is not None:
+            evalReassembly.reqPkgsSize = numAllPackages
+            evalReassembly.impPkgsSize = numReqPackages
 
         return errorString

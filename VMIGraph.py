@@ -52,7 +52,7 @@ class VMIGraph:
         # returns lines of form "curl;1.1;amd64;no;dep1, dep2,...;dep3, dep4,..."
 
         # List of node names and attributes
-        pkgsInfo = []   # in the form of [(pkg,{name:"pkg", version:"1.1", architecture:"amd64", essential:False})]
+        pkgsInfo = []   # in the form of [(pkg,{name:"pkg", version:"1.1", architecture:"amd64", essential:False, installsize:10})]
         pkgHelperDict = dict()
         for line in pkgsInfoString.split("\n"):
             lineData = line.split(";")

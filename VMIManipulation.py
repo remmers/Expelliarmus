@@ -30,12 +30,14 @@ class VMIManipulator:
         self.loading = False
 
     @staticmethod
-    def getVMIManipulator(pathToVMI, vmiName, guest, root):
+    def getVMIManipulator(pathToVMI, vmiName, guest, root, pkgManager=None, distro=None, arch=None):
         #print ('Creating VMIManipulator for disk: \"' + pathToVMI + '\"')
-
-        pkgManager  = guest.inspect_get_package_management(root)
-        distro      = guest.inspect_get_distro(root)
-        arch        = guest.inspect_get_arch(root)
+        if pkgManager is None:
+            pkgManager  = guest.inspect_get_package_management(root)
+        if distro is None:
+            distro      = guest.inspect_get_distro(root)
+        if arch is None:
+            arch        = guest.inspect_get_arch(root)
         '''print "VMIManipulatorAPT"
         print "Distribution:\t\t" + distro
         print "Package Management:\t" + pkgManager'''

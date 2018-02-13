@@ -6,11 +6,13 @@ import shutil
 
 from Decomposer import Decomposer
 from GuestFSHelper import GuestFSHelper
-from Mapping import Mapping
+from VMISimilarity import SimilarityCalculator
 from Reassembler import Reassembler
 from RepositoryDatabase import RepositoryDatabase
 from StaticInfo import StaticInfo
 from VMIDescription import VMIDescriptor
+from Evaluation import SimilarityToMasterEvaluation, SimilarityToAllEvaluation, DecompositionEvaluation, \
+    ReassemblingEvaluation
 
 
 class Expelliarmus:
@@ -29,9 +31,9 @@ class Expelliarmus:
             os.mkdir(StaticInfo.relPathLocalRepositoryUserFolders)
 
     def runSimilarity(self):
-        Mapping.computeSimilarityBetweenVMIs("VMIs/VMI_ug_fcegv.img", ["eclipse"],
+        SimilarityCalculator.computeSimilarityOneToOne("VMIs/VMI_ug_fcegv.img", ["eclipse"],
                                              "VMIs/VMI_ug_fcgv.img", ["gimp"],
-                                             onlyOnMainServices=True)
+                                                       onlyOnMainServices=True)
 
     def getDirSize(self, start_path):
         total_size = 0
@@ -43,70 +45,64 @@ class Expelliarmus:
 
     def printVMIs(self):
         with RepositoryDatabase() as repoManager:
-            vmiDataList = repoManager.getAllVMIs()
+            vmiDataList = repoManager.getDataForAllVMIs()
             for vmiData in vmiDataList:
                 print vmiData
 
-
-    def testDecompose(self):
-        mainServices = ["mysql-server"]
-        Decomposer.decompose("VMIs/MySQLUbuntu.qcow2", "MySQLUbuntu", mainServices)
-
-
-    def testReassemble(self):
-        Reassembler.reassemble("MySQLUbuntu")
-
-    def testBaseImageDecision(self):
-        with RepositoryDatabase() as repoManager:
-            baseImagesWithCompatiblePackages = repoManager.getBaseImagesWithCompatiblePackages("ubuntu", "16.4", "x86_64", "apt")
-            newBase = None
-            newCompPkgs = None
-            i = 0
-            for baseImage in baseImagesWithCompatiblePackages.keys():
-                if i==1:
-                    newBase = baseImage
-                    newCompPkgs = baseImagesWithCompatiblePackages[newBase]
-                    baseImagesWithCompatiblePackages.pop(baseImage)
-                    break
-                i = i+1
-            (chosen,replaceList) = Decomposer.chooseBaseImage(newBase,newCompPkgs,baseImagesWithCompatiblePackages)
-            print ""
-            print chosen.pathToVMI
-            for b in replaceList:
-                print b.pathToVMI
-
-    def evaluateDecompositionOnce(self, evalLogFileName):
-        # Create evaluation log file
-        open(evalLogFileName,"w+").write("VMI_filename;sumOrigStorageSize[bytes];RepoStorageSize[bytes];dbSize[bytes];decompTime[s];reqPkgsSize[kbytes];expPkgsSize[kbytes];baseImageInfo\n")
-        sumOrigStorageSize = 0.0
-
+    def evaluateSimToMasterOnce(self, evalLogPath):
+        simToMasterEval = SimilarityToMasterEvaluation(evalLogPath)
 
         sortedVmiFileNames = self.getSortedListOfAllVMIs()
         for vmiFileName in sortedVmiFileNames:
             vmiPath = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName
             vmiMetaDataPath = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName.rsplit(".", 1)[0] + ".meta"
-            vmiMetaData = open(vmiMetaDataPath).read().split(";")
+            vmiMetaData = open(vmiMetaDataPath).read().split("\n")[0].split(";")
             mainServices = vmiMetaData[2].split(",")
 
-            sumOrigStorageSize = sumOrigStorageSize + os.path.getsize(vmiPath)
+            Decomposer.decompose(vmiPath, vmiFileName, mainServices, evalSimToMaster=simToMasterEval)
+            os.remove(vmiMetaDataPath)
+
+            simToMasterEval.newLine()
+        simToMasterEval.saveEvaluation()
+
+    def evaluateSimBetweenAll(self, evalLogPath):
+        sortedVmiFileNames = self.getSortedListOfAllVMIs()
+        sortedVmiFileNamesAndMS = self.getSortedListOfAllVMIsAndMS()
+
+        evalSimToMaster = SimilarityToAllEvaluation(evalLogPath, sortedVmiFileNames)
+
+        evalSimToMaster.similarities = SimilarityCalculator.computeSimilarityManyToMany(sortedVmiFileNamesAndMS, onlyOnMainServices=False)
+
+        evalSimToMaster.saveEvaluation()
+
+    def evaluateDecompositionOnce(self, evalLogFileName):
+        evalDecomp = DecompositionEvaluation(evalLogFileName)
+
+        sortedVmiFileNames = self.getSortedListOfAllVMIs()
+        for vmiFileName in sortedVmiFileNames:
+            vmiPath = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName
+            vmiMetaDataPath = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName.rsplit(".", 1)[0] + ".meta"
+            vmiMetaData = open(vmiMetaDataPath).read().split("\n")[0].split(";")
+            mainServices = vmiMetaData[2].split(",")
+
+            evalDecomp.vmiFilename = vmiFileName
+            evalDecomp.vmiMainServices = mainServices
+            evalDecomp.addVmiOrigSize(os.path.getsize(vmiPath))
 
             startTime = time.time()
-            sumSizesReqPkgs, sumSizesExpPkgs, baseImageTreatmentString = Decomposer.decompose(vmiPath, vmiFileName, mainServices)
+            Decomposer.decompose(vmiPath, vmiFileName, mainServices, evalDecomp=evalDecomp)
             decompTime = time.time() - startTime
 
             repoStorageSize = self.getDirSize(StaticInfo.relPathLocalRepositoryBaseImages) + \
                               self.getDirSize(StaticInfo.relPathLocalRepositoryUserFolders) + \
                               self.getDirSize(StaticInfo.relPathLocalRepositoryPackages)
 
-            open(evalLogFileName,"a").write(vmiFileName + ";" +
-                                            str(sumOrigStorageSize) + ";" +
-                                            str(repoStorageSize) + ";" +
-                                            str(os.path.getsize(StaticInfo.relPathLocalRepositoryDatabase)) + ";" +
-                                            str(decompTime) + ";" +
-                                            str(sumSizesReqPkgs) + ";" +
-                                            str(sumSizesExpPkgs) + ";" +
-                                            baseImageTreatmentString + "\n")
+            evalDecomp.sumRepoStorageSize = repoStorageSize
+            evalDecomp.dbSize = os.path.getsize(StaticInfo.relPathLocalRepositoryDatabase)
+            evalDecomp.decompTime = decompTime
+            evalDecomp.newLine()
             os.remove(vmiMetaDataPath)
+        evalDecomp.saveEvaluation()
 
     def evaluateDecomposition(self):
         vmiBackupFolders = [
@@ -129,6 +125,54 @@ class Expelliarmus:
             self.checkFolderExistence()
             self.evaluateDecompositionOnce("Evaluation/decomp_eval_" + str(i) + ".csv")
 
+    def evaluateReassemblingOnce(self, evalLogFileName):
+        evalReassembly = ReassemblingEvaluation(evalLogFileName)
+
+        with RepositoryDatabase() as repoManager:
+            vmiNameList = repoManager.getAllVmiNames()
+
+        for vmiName in vmiNameList:
+            shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+            os.mkdir(StaticInfo.relPathLocalVMIFolder)
+            startTime = time.time()
+            pathToNewVMI = Reassembler.reassemble(vmiName, evalReassembly=evalReassembly)
+            reassemblingTime = time.time() - startTime
+
+            evalReassembly.reassemblingTime = reassemblingTime
+            evalReassembly.vmiSize = os.path.getsize(pathToNewVMI)
+
+            evalReassembly.newLine()
+
+        evalReassembly.saveEvaluation()
+
+    def evaluateReassemblingTest(self):
+
+        shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+        os.mkdir(StaticInfo.relPathLocalVMIFolder)
+        evalReassembly = ReassemblingEvaluation("Evaluation/reassembly_eval_two.csv")
+
+        vmiNameList = ["ApacheUbuntu.qcow2", "LampStackUbuntu.qcow2"]
+
+        for vmiName in vmiNameList:
+            startTime = time.time()
+            pathToNewVMI = Reassembler.reassemble(vmiName, evalReassembly=evalReassembly)
+            reassemblingTime = time.time() - startTime
+
+            evalReassembly.reassemblingTime = reassemblingTime
+            evalReassembly.vmiSize = os.path.getsize(pathToNewVMI)
+
+            evalReassembly.newLine()
+
+        evalReassembly.saveEvaluation()
+
+
+    def evaluateReassembling(self):
+        for i in [2]:
+            shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+            os.mkdir(StaticInfo.relPathLocalVMIFolder)
+            self.evaluateReassemblingOnce("Evaluation/reassembly_eval_eachOnEmptyFolder" + str(i) + ".csv")
+
+
     def getSortedListOfAllVMIs(self):
         vmiList = list()
         for filename in os.listdir(StaticInfo.relPathLocalVMIFolder):
@@ -141,6 +185,24 @@ class Expelliarmus:
                     vmiList.append((pathToVMI,pkgsSize))
         #sortedVMIs = sorted(vmiList, key=lambda vmiData: (vmiData[1],vmiData[0]))
         sortedVMIs = list( x[0] for x in sorted(vmiList, key=lambda vmiData: (vmiData[1],vmiData[0])))
+        return sortedVMIs
+
+    def getSortedListOfAllVMIsAndMS(self):
+        """
+        :return: [vmiFilename,[MS1,MS2]]
+        """
+        vmiTriples = list()
+        for filename in os.listdir(StaticInfo.relPathLocalVMIFolder):
+            if filename.endswith(".meta"):
+                filePath = StaticInfo.relPathLocalVMIFolder + "/" + filename
+                with open(filePath, "r") as metaDataFile:
+                    metaData = metaDataFile.read().split(";")
+                    pathToVMI = metaData[0]
+                    pkgsSize = metaData[1]
+                    mainservices = metaData[2]
+                    vmiTriples.append((pathToVMI,pkgsSize,mainservices))
+        #sortedVMIs = sorted(vmiTriples, key=lambda vmiData: (vmiData[1],vmiData[0]))
+        sortedVMIs = list( (x[0],x[2].split(",")) for x in sorted(vmiTriples, key=lambda vmiData: (vmiData[1],vmiData[0])))
         return sortedVMIs
 
     # deprecated, not needed
