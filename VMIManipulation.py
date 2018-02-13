@@ -114,21 +114,22 @@ class VMIManipulator:
             customize           to generate new random seed
     '''
     # TODO: check blkid-tab
-    def resetImage(self):
-        print ('\n=== Resetting VMI ' + self.local_relPathToVMI + ' (e.g. Log files, crashreports, editor backups ...): ')
-        self.startLoadingAnimation()
+    @staticmethod
+    def resetImage(pathToVMI):
+        print ('Resetting VMI ' + pathToVMI + ' (e.g. Log files, crashreports, editor backups ...): ')
+
+        absPathToVMI = os.path.dirname(os.path.realpath(__file__)) + '/' + pathToVMI
         subprocess.call(
             ['/home/csat2890/Downloads/libguestfs-1.36.7/run', 'virt-sysprep',
-             '--add', self.local_absPathToVMI,
+             '--add', absPathToVMI,
              '--enable','customize'],
             stdout=subprocess.PIPE)
         subprocess.call(
             ['/home/csat2890/Downloads/libguestfs-1.36.7/run', 'virt-sysprep',
-                '--add', self.local_absPathToVMI,
+                '--add', absPathToVMI,
                 '--operations',
                 'customize,abrt-data,backup-files,bash-history,blkid-tab,crash-data,cron-spool,dhcp-client-state,dhcp-server-state,dovecot-data,logfiles,lvm-uuids,machine-id,mail-spool,net-hostname,net-hwaddr,pacct-log,package-manager-cache,pam-data,passwd-backups,puppet-data-log,rh-subscription-manager,rhn-systemid,rpm-db,samba-db-log,smolt-uuid,ssh-hostkeys,ssh-userdir,sssd-db-log,tmp-files,udev-persistent-net,utmp,yum-uuid'],
             stdout=subprocess.PIPE)
-        self.stopLoadingAnimation()
 
     def load(self):
         for c in itertools.cycle(['.  ', '.. ', '...', ' ..', '  .','   ']):
@@ -176,7 +177,7 @@ class VMIManipulatorAPT(VMIManipulator):
         patternFileName = r"./([^'`]*)"
         depMatcher = re.compile(r"^dpkg-deb: building package ['`]"+patternPkgName+"['`] in ['`]"+patternFileName+"['`].$")
         numPackages = len(packageDict)
-        packageInfoList = list()
+        packageInfoDict = dict(packageDict) # same as input + filenames
 
         # check if any packages have to be exported at all
         if (numPackages > 0):
@@ -206,14 +207,16 @@ class VMIManipulatorAPT(VMIManipulator):
                     pkgName = matchResult.group(1)
                     pkgFileName = matchResult.group(2)
                     pkgNewpath = self.local_packageFolder + "/" + pkgFileName
-                    packageInfoList.append((pkgName,
-                                            packageDict[pkgName][VMIGraph.GNodeAttrVersion],
-                                            packageDict[pkgName][VMIGraph.GNodeAttrArchitecture],
-                                            self.distribution,
-                                            pkgNewpath))
+                    packageInfoDict[pkgName]["path"] = pkgNewpath
 
-        print "\t" + str(len(packageInfoList)) + " package(s) exported"
-        return packageInfoList
+        # make sure every package in packageInfoDict has a path
+        for pkg,pkgInfo in packageInfoDict.iteritems():
+            if "path" not in pkgInfo:
+                del packageInfoDict[pkg]
+                print "ATTENTION: package \"%s\" was planned to be exported but failed."
+
+        print "\t" + str(len(packageInfoDict)) + " package(s) exported"
+        return packageInfoDict
 
     def importPackages(self, mainServices, filenames):
 

@@ -79,7 +79,13 @@ class Expelliarmus:
         evalDecomp = DecompositionEvaluation(evalLogFileName)
 
         sortedVmiFileNames = self.getSortedListOfAllVMIs()
+        i = 0
         for vmiFileName in sortedVmiFileNames:
+            i = i + 1
+            print "============================="
+            print "        VMI %i/%i" % (i,len(sortedVmiFileNames))
+            print "============================="
+
             vmiPath = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName
             vmiMetaDataPath = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName.rsplit(".", 1)[0] + ".meta"
             vmiMetaData = open(vmiMetaDataPath).read().split("\n")[0].split(";")
@@ -127,22 +133,17 @@ class Expelliarmus:
 
     def evaluateReassemblingOnce(self, evalLogFileName):
         evalReassembly = ReassemblingEvaluation(evalLogFileName)
-
         with RepositoryDatabase() as repoManager:
             vmiNameList = repoManager.getAllVmiNames()
 
         for vmiName in vmiNameList:
-            shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
-            os.mkdir(StaticInfo.relPathLocalVMIFolder)
             startTime = time.time()
             pathToNewVMI = Reassembler.reassemble(vmiName, evalReassembly=evalReassembly)
             reassemblingTime = time.time() - startTime
 
             evalReassembly.reassemblingTime = reassemblingTime
             evalReassembly.vmiSize = os.path.getsize(pathToNewVMI)
-
             evalReassembly.newLine()
-
         evalReassembly.saveEvaluation()
 
     def evaluateReassemblingTest(self):
@@ -167,10 +168,10 @@ class Expelliarmus:
 
 
     def evaluateReassembling(self):
-        for i in [2]:
+        for i in [1,2,3,4,5]:
             shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
             os.mkdir(StaticInfo.relPathLocalVMIFolder)
-            self.evaluateReassemblingOnce("Evaluation/reassembly_eval_eachOnEmptyFolder" + str(i) + ".csv")
+            self.evaluateReassemblingOnce("Evaluation/reassembly_eval_" + str(i) + ".csv")
 
 
     def getSortedListOfAllVMIs(self):

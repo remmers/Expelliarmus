@@ -136,8 +136,10 @@ class ReassemblingEvaluation(Evaluation):
         # First line in output
         self.lines.append("vmiFilename;used base image;base image size [bytes];"
                           "vmi main services;vmi size [bytes];"
-                          "reassembling time [s];copy time [s];import time [s];handler creation time [s];"
-                          "required PkgsSize[kbytes];imported PkgsSize[kbytes];reassembling info")
+                          "reassembling time [s];copy time [s];reset time [s];import time [s];handler creation time [s];"
+                          "number of required packages;number of imported packages;"
+                          "required PkgsSize[kbytes];imported PkgsSize[kbytes];"
+                          "reassembling info")
         self.vmiFilename = None
         self.vmiMainServices = None
         self.vmiSize = None
@@ -145,8 +147,11 @@ class ReassemblingEvaluation(Evaluation):
         self.baseImageSize = None
         self.reassemblingTime = None
         self.copyTime = None
+        self.resetTime = None
         self.importTime = None
         self.handlerCreationTime = None
+        self.reqPkgsNum = None
+        self.expPkgsNum = None
         self.reqPkgsSize = None
         self.impPkgsSize = None
         self.info = None
@@ -155,7 +160,15 @@ class ReassemblingEvaluation(Evaluation):
         self.vmiFilename = None
         self.vmiMainServices = None
         self.vmiSize = None
+        self.pathToBase = None
+        self.baseImageSize = None
         self.reassemblingTime = None
+        self.copyTime = None
+        self.resetTime = None
+        self.importTime = None
+        self.handlerCreationTime = None
+        self.reqPkgsNum = None
+        self.expPkgsNum = None
         self.reqPkgsSize = None
         self.impPkgsSize = None
         self.info = None
@@ -168,8 +181,11 @@ class ReassemblingEvaluation(Evaluation):
                           str(self.vmiSize) + ";" +
                           str(self.reassemblingTime) + ";" +
                           str(self.copyTime) + ";" +
+                          str(self.resetTime) + ";" +
                           str(self.importTime) + ";" +
                           str(self.handlerCreationTime) + ";" +
+                          str(self.reqPkgsNum) + ";" +
+                          str(self.impPkgsNum) + ";" +
                           str(self.reqPkgsSize) + ";" +
                           str(self.impPkgsSize) + ";" +
                           str(self.info))

@@ -67,11 +67,11 @@ class Decomposer:
               % (",".join(vmi.mainServices),numAllPackages, numAllPackages - numReqPackages, numReqPackages)
 
         if numReqPackages > 0:
-            packageInfoList = manipulator.exportPackages(packageDict)
+            packageInfoDict = manipulator.exportPackages(packageDict)
 
             # Update Repository Database
             with RepositoryDatabase() as repoManager:
-                repoManager.addPackageList(packageInfoList)
+                repoManager.addPackageDict(packageInfoDict, vmi.distribution)
         if evalDecomp is not None:
             evalDecomp.reqPkgsNum = numAllPackages
             evalDecomp.expPkgsNum = numReqPackages

@@ -3,6 +3,7 @@ import sys
 import sqlite3
 
 import shutil
+from collections import defaultdict
 
 from StaticInfo import StaticInfo
 from VMIDescription import BaseImageDescriptor, VMIMasterDescriptor
@@ -43,6 +44,7 @@ class RepositoryDatabase:
               version       TEXT    NOT NULL,
               architecture  TEXT    NOT NULL,
               distribution  TEXT    NOT NULL,
+              installsize   INTEGER NOT NULL,
               filename      TEXT    NOT NULL)
         ''')
         self.cursor.execute('''
@@ -182,47 +184,19 @@ class RepositoryDatabase:
                 "\tsolve manually!")
             return result[0][0]
 
-    def tryAddPackage(self, name, version, arch, distribution, filename):
-        """
-            tries to add Package and returns pkgID, if package already exists, pkgID is also returned
-        :param name:
-        :param version:
-        :param distribution:
-        :param filename:
-        :return:
-        """
-        self.cursor.execute('''
-                SELECT pkgID FROM PackageRepository
-                WHERE name=?
-                AND version=?
-                AND architecture=?
-                AND distribution=?
-                AND filename=?
-            ''',
-            (name, version, arch, distribution, filename)
-        )
-        result = self.cursor.fetchall()
-        if len(result) > 1:
-            print("ERROR in database: multiple packages with same name, version, distribution, and filename exist:\n" \
-                  "\tpkgIDs: " + str(result) + "\n\tsolve manually!")
-            return result[0][0]
-        elif len(result) == 1:
-            return result[0][0]
-        else:
-            # Insert new package
-            self.cursor.execute('''
-                    INSERT INTO PackageRepository (name,version,architecture,distribution,filename)
-                    VALUES (?,?,?,?,?)''',
-                    (name,version,arch,distribution,filename))
-            self.db.commit()
-            # Return id
-            return self.getPackageID(name,version,arch,distribution)
-
-    def addPackageList(self, packageList):
+    def addPackageDict(self, packageInfoDict, distribution):
+        packageInfoList = [(
+            pkgInfo[VMIGraph.GNodeAttrName],
+            pkgInfo[VMIGraph.GNodeAttrVersion],
+            pkgInfo[VMIGraph.GNodeAttrArchitecture],
+            distribution,
+            pkgInfo[VMIGraph.GNodeAttrInstallSize],
+            pkgInfo[VMIGraph.GNodeAttrFilePath]
+        ) for pkg,pkgInfo in packageInfoDict.iteritems()]
         self.cursor.executemany('''
-                      INSERT INTO PackageRepository(name, version, architecture, distribution, filename)
-                      VALUES(?,?,?,?,?)
-                  ''', packageList)
+                      INSERT INTO PackageRepository(name, version, architecture, distribution, installsize, filename)
+                      VALUES(?,?,?,?,?,?)
+                  ''', packageInfoList)
         self.db.commit()
 
     def getBaseImageId(self, filename):
@@ -652,7 +626,68 @@ class RepositoryDatabase:
         else:
             return None
 
+    def getDepPkgInfoDictForVMI(self, vmiID):
+        """
+        :param vmiID:
+        :return: dict with package information required to install main services on specific VMI
+                 in the form of dict(pkg:pkgInfo)
+                       pkgInfo: dict(name:"pkg", version:"1.1", architecture:"amd64", installsize:10, filePath:local/ubuntu/pkg1.deb)
+        """
+        self.cursor.execute('''
+            SELECT name,version,architecture,installsize,filename
+            FROM PackageRepository
+            WHERE pkgID IN (
+                SELECT DISTINCT deppkgID
+                FROM PackageDependencies
+                WHERE vmiID=?
+            )
+            OR pkgID IN(
+                SELECT DISTINCT pkgID
+                FROM PackageDependencies
+                WHERE vmiID=?
+            )''',
+            (vmiID,vmiID)
+        )
+        result = self.cursor.fetchall()
+        if len(result) >= 1:
+            pkgInfoDict = defaultdict(dict)
+            for row in result:
+                pkgInfoDict[row[0]] = {
+                    VMIGraph.GNodeAttrName: str(row[0]),
+                    VMIGraph.GNodeAttrVersion: str(row[1]),
+                    VMIGraph.GNodeAttrArchitecture: str(row[2]),
+                    VMIGraph.GNodeAttrInstallSize: str(row[3]),
+                    VMIGraph.GNodeAttrFilePath: str(row[4])
+                }
+            return pkgInfoDict
+        else:
+            return None
+
     def getVMIData(self, vmiName):
+        """
+
+        :param vmiName:
+        :return: triple (pathToBaseImage, mainServices, packageList)
+        :rtype (pathToUserDir,BaseImageDescriptor,list(),dict())
+        """
+        vmiID = self.getVmiID(vmiName)
+        if vmiID == None:
+            return None
+
+
+        userDirPath = self.getVmiUserDirPath(vmiName)
+        baseImageInfo = self.getBaseImageInfoForVmiID(vmiID)
+        baseImage = BaseImageDescriptor(baseImageInfo[4])
+        baseImage.initializeFromRepo(baseImageInfo[0], baseImageInfo[1], baseImageInfo[2], baseImageInfo[3], baseImageInfo[5])
+
+        return (
+            userDirPath,
+            baseImage,
+            self.getMainServicesForVmiID(vmiID),
+            self.getDepPkgInfoDictForVMI(vmiID)
+        )
+
+    def getVMIDataOLD(self, vmiName):
         """
 
         :param vmiName:

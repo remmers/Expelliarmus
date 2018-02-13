@@ -22,12 +22,12 @@ class Reassembler:
             if not repoManager.vmiExists(vmiName):
                 sys.exit("Error: Cannot reassemble VMI \"%s\". No VMI with that name exists in the database!" % vmiName)
             baseImage = None # type: BaseImageDescriptor
-            userDirPath, baseImage, mainServices, packageInfoSet = repoManager.getVMIData(vmiName)
+            userDirPath, baseImage, mainServices, packageInfoDict = repoManager.getVMIData(vmiName)
 
         if userDirPath is None \
                 or baseImage is None\
                 or mainServices is None\
-                or packageInfoSet is None:
+                or packageInfoDict is None:
             sys.exit("Error while reassembling VMI \"%s\". Insufficient Data in database" % vmiName)
 
         if not os.path.isfile(baseImage.pathToVMI):
@@ -51,6 +51,11 @@ class Reassembler:
         shutil.copy(baseImage.pathToVMI, pathToVMI)
         copyTime = time.time() - startTime
 
+        # Reset Image
+        startTime = time.time()
+        VMIManipulator.resetImage(pathToVMI)
+        resetTime = time.time() - startTime
+
         # Create handler
         startTime = time.time()
         (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
@@ -58,17 +63,12 @@ class Reassembler:
 
         manipulator = VMIManipulator.getVMIManipulator(pathToVMI, vmiName, guest, root)
 
-        # Reset Image
-        #startTime = time.time()
-        #manipulator.resetImage()
-        #resetTime = time.time() - startTime
-
         # Import Home
         manipulator.importHomeDir(userDirPath)
 
         # Import Packages
         startTime = time.time()
-        errorString = Reassembler.importPackages(manipulator, baseImage, mainServices, packageInfoSet, evalReassembly=evalReassembly)
+        errorString = Reassembler.importPackages(manipulator, baseImage, mainServices, packageInfoDict, evalReassembly=evalReassembly)
         importTime = time.time() - startTime
 
         GuestFSHelper.shutdownHandler(guest)
@@ -93,6 +93,7 @@ class Reassembler:
             evalReassembly.pathToBase = baseImage.pathToVMI.rsplit("/",1)[-1]
             evalReassembly.baseImageSize = os.path.getsize(baseImage.pathToVMI)
             evalReassembly.copyTime = copyTime
+            evalReassembly.resetTime = resetTime
             evalReassembly.importTime = importTime
             evalReassembly.handlerCreationTime = handlerCreationTime
             if errorString is not None:
@@ -102,34 +103,41 @@ class Reassembler:
 
 
     @staticmethod
-    def importPackages(manipulator, baseImage, mainServices, packageInfoSet, evalReassembly=None):
+    def importPackages(manipulator, baseImage, mainServices, packageInfoDict, evalReassembly=None):
 
-        numAllPackages = len(packageInfoSet)
+        allPkgsNum = len(packageInfoDict)
+        allPkgsSize = 0
+        reqPkgsSize = 0
 
         # Filter which packages already exist in VMI
-        # and create install string a la "curl dep1=1.1 dep2=3.0..."
         vmiPackageDict = baseImage.getNodeData()
-        packageFileNames = list()
-        for (name,version,architecture,filename) in packageInfoSet:
-            if not (
-                    name in vmiPackageDict and
-                    vmiPackageDict[name][VMIGraph.GNodeAttrVersion] == version and
-                    vmiPackageDict[name][VMIGraph.GNodeAttrArchitecture] == architecture
-                ):
-                packageFileNames.append(filename)
+        reqPackagesFileNames = list()
 
-        numReqPackages = len(packageFileNames)
+        for pkgName,pkgInfo in packageInfoDict.iteritems():
+            if not (
+                    pkgName in vmiPackageDict and
+                    vmiPackageDict[pkgName][VMIGraph.GNodeAttrVersion] == pkgInfo[VMIGraph.GNodeAttrVersion] and
+                    vmiPackageDict[pkgName][VMIGraph.GNodeAttrArchitecture] == pkgInfo[VMIGraph.GNodeAttrArchitecture]
+                ):
+                reqPackagesFileNames.append(pkgInfo[VMIGraph.GNodeAttrFilePath])
+                reqPkgsSize = reqPkgsSize + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+            allPkgsSize = allPkgsSize + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+
+        reqPkgNum = len(reqPackagesFileNames)
         print "Package Import:\n\t" \
               "Main Service(s):\t\t\t%s\n\t" \
               "Package(s) required:\t\t%i\n\t" \
               "Already existing in VMI:\t%i\n\t" \
               "Package(s) to be imported:\t%i" \
-              % (",".join(mainServices), numAllPackages, numAllPackages - numReqPackages, numReqPackages)
+              % (",".join(mainServices), allPkgsNum, allPkgsNum - reqPkgNum, reqPkgNum)
 
-        errorString = manipulator.importPackages(mainServices, packageFileNames)
+        errorString = manipulator.importPackages(mainServices, reqPackagesFileNames)
 
         if evalReassembly is not None:
-            evalReassembly.reqPkgsSize = numAllPackages
-            evalReassembly.impPkgsSize = numReqPackages
+
+            evalReassembly.reqPkgsNum = allPkgsNum
+            evalReassembly.impPkgsNum = reqPkgNum
+            evalReassembly.reqPkgsSize = allPkgsSize
+            evalReassembly.impPkgsSize = reqPkgsSize
 
         return errorString

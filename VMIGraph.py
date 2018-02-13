@@ -14,6 +14,7 @@ class VMIGraph:
     GNodeAttrArchitecture = "architecture"
     GNodeAttrEssential = "essential"
     GNodeAttrInstallSize = "size"
+    GNodeAttrFilePath = "path"
     GEdgeAttrConstraint = "constraint"
     GEdgeAttrOperator = "operator"
     GEdgeAttrVersion = "version"
@@ -63,13 +64,15 @@ class VMIGraph:
                                  VMIGraph.GNodeAttrVersion: lineData[Q.Version],
                                  VMIGraph.GNodeAttrArchitecture: lineData[Q.Arch],
                                  VMIGraph.GNodeAttrEssential: essentialPkg,
-                                 VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize]
+                                 VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize],
+                                 VMIGraph.GNodeAttrFilePath: None
                             }))
             pkgHelperDict[lineData[Q.Name]] = {VMIGraph.GNodeAttrName: lineData[Q.Name],
                                                VMIGraph.GNodeAttrVersion: lineData[Q.Version],
                                                VMIGraph.GNodeAttrArchitecture: lineData[Q.Arch],
                                                VMIGraph.GNodeAttrEssential: essentialPkg,
-                                               VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize]}
+                                               VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize],
+                                               VMIGraph.GNodeAttrFilePath: None}
 
         # List of edge data (fromNode, toNode and attributes)
         depList = []  # in the form of [(pkg,deppkg,{constraint:True, operator:">=", version:"1.6"})]
