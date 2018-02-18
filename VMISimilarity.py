@@ -244,9 +244,9 @@ class SimilarityCalculator:
     @staticmethod
     def computeSimilarityManyToMany(vmisAndMS, onlyOnMainServices):
         if onlyOnMainServices:
-            print "=====Calculating similarities between each of %i VMIs" % len(vmisAndMS)
-        else:
             print "=====Calculating similarities with respect to main services between each of %i VMIs" % len(vmisAndMS)
+        else:
+            print "=====Calculating similarities between each of %i VMIs" % len(vmisAndMS)
 
         sortedVMIDescriptorList = list()
         i = 0

@@ -14,8 +14,6 @@ class GuestFSHelper:
         def compare(a, b):
             return len(a) - len(b)
 
-        print ('Creating GuestFS Handler for disk: \"' + pathToVMI + '\"...')
-
         guest = guestfs.GuestFS(python_return_dict=True)
         guest.add_drive_opts(pathToVMI, readonly=False)
         guest.launch()

@@ -3,6 +3,7 @@ import networkx as nx
 import os
 
 from GuestFSHelper import GuestFSHelper
+from StaticInfo import StaticInfo
 from VMIGraph import VMIGraph
 
 
@@ -18,15 +19,15 @@ class BaseImageDescriptor():
         self.graphFileName = None
 
 
-    def initializeNew(self, guest, root):
+    def initializeNew(self, guest, root, verbose=False):
         #print "Creating new Descriptor for \"%s\"" % self.pathToVMI
         self.distribution = guest.inspect_get_distro(root)
         self.distributionVersion = str(guest.inspect_get_major_version(root)) + \
-                                   "." + \
+                                   "_" + \
                                    str(guest.inspect_get_minor_version(root))
         self.architecture = guest.inspect_get_arch(root)
         self.pkgManager = guest.inspect_get_package_management(root)
-        self.graph = VMIGraph.createGraph(guest, self.pkgManager)
+        self.graph = VMIGraph.createGraph(guest, self.pkgManager, verbose=verbose)
 
     def initializeFromRepo(self, distribution, distributionVersion, architecture, pkgManager, graphFileName):
         self.distribution = distribution
@@ -55,6 +56,12 @@ class BaseImageDescriptor():
 
     def getNumberOfPackages(self):
         return len(self.graph)
+
+    def getPkgsInstallSize(self):
+        size = 0
+        for pkg, pkgInfo in self.graph.nodes(data=True):
+            size = size + pkgInfo[StaticInfo.dictKeyInstallSize]
+        return size
 
     def getSubGraphFromRoots(self, rootNodeList):
         nodeList = list()
@@ -89,12 +96,6 @@ class BaseImageDescriptor():
             if name in node:
                 ret.append(node)
         return ret
-
-    def getInstallSizeOfAllePackages(self):
-        sum = 0
-        for pkg,pkgInfo in self.getNodeData().iteritems():
-            sum = sum + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
-        return sum
 
     def checkCompatibilityForPackages(self, packageDict, verbose=False):
         """
@@ -131,11 +132,11 @@ class BaseImageDescriptor():
 
 
 class VMIDescriptor(BaseImageDescriptor):
-    def __init__(self, pathToVMI, vmiName, mainServices, guest, root):
+    def __init__(self, pathToVMI, vmiName, mainServices, guest, root, verbose=False):
         super(VMIDescriptor, self).__init__(pathToVMI)
         self.vmiName = vmiName
         self.mainServices = mainServices
-        self.initializeNew(guest, root)
+        self.initializeNew(guest, root, verbose=verbose)
 
     def getMainServicesDepList(self):
         return [

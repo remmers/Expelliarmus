@@ -77,6 +77,7 @@ class RepositoryDatabase:
                 masterGraphPath TEXT  NOT NULL);
                 ''')
         self.db.commit()
+        self.addPackageDict(StaticInfo.basicPackagesDictFedora, "fedora")
 
     def packageExists(self, name, version, arch, distribution):
         """
@@ -559,6 +560,24 @@ class RepositoryDatabase:
         else:
             return None
 
+    def getMainServiceIDForVmiID(self, vmiID, pkgName):
+        self.cursor.execute('''
+            SELECT pkgID
+            FROM PackageRepository
+            WHERE name = ?
+            AND pkgID IN (
+                SELECT DISTINCT pkgID
+                FROM PackageDependencies
+                WHERE vmiID=?
+            )''',
+            (pkgName, vmiID)
+        )
+        result = self.cursor.fetchall()
+        if len(result) == 1:
+            return str(result[0][0])
+        else:
+            return None
+
     def getCompPkgDictForBaseImageID(self, baseID):
         """
         :param baseID:
@@ -663,6 +682,44 @@ class RepositoryDatabase:
         else:
             return None
 
+    def getDepPkgInfoDictForVmiOneMS(self, vmiID, mainService):
+        """
+        :param vmiID:
+        :param mainService
+        :return: dict with package information required to install one specific main services on specific VMI
+                 in the form of dict(pkg:pkgInfo)
+                       pkgInfo: dict(name:"pkg", version:"1.1", architecture:"amd64", installsize:10, filePath:local/ubuntu/pkg1.deb)
+        """
+        mainServiceID = self.getMainServiceIDForVmiID(vmiID, mainService)
+
+        self.cursor.execute('''
+            SELECT name,version,architecture,installsize,filename
+            FROM PackageRepository
+            WHERE pkgID IN (
+                SELECT DISTINCT deppkgID
+                FROM PackageDependencies
+                WHERE vmiID = ?
+                AND pkgID = ?
+            )
+            OR pkgID = ?
+            ''',
+            (vmiID,mainServiceID,mainServiceID)
+        )
+        result = self.cursor.fetchall()
+        if len(result) >= 1:
+            pkgInfoDict = defaultdict(dict)
+            for row in result:
+                pkgInfoDict[row[0]] = {
+                    VMIGraph.GNodeAttrName: str(row[0]),
+                    VMIGraph.GNodeAttrVersion: str(row[1]),
+                    VMIGraph.GNodeAttrArchitecture: str(row[2]),
+                    VMIGraph.GNodeAttrInstallSize: str(row[3]),
+                    VMIGraph.GNodeAttrFilePath: str(row[4])
+                }
+            return pkgInfoDict
+        else:
+            return None
+
     def getVMIData(self, vmiName):
         """
 
@@ -685,30 +742,6 @@ class RepositoryDatabase:
             baseImage,
             self.getMainServicesForVmiID(vmiID),
             self.getDepPkgInfoDictForVMI(vmiID)
-        )
-
-    def getVMIDataOLD(self, vmiName):
-        """
-
-        :param vmiName:
-        :return: triple (pathToBaseImage, mainServices, packageList)
-        :rtype (BaseImageDescriptor,list(),list())
-        """
-        vmiID = self.getVmiID(vmiName)
-        if vmiID == None:
-            return None
-
-
-        userDirPath = self.getVmiUserDirPath(vmiName)
-        baseImageInfo = self.getBaseImageInfoForVmiID(vmiID)
-        baseImage = BaseImageDescriptor(baseImageInfo[4])
-        baseImage.initializeFromRepo(baseImageInfo[0], baseImageInfo[1], baseImageInfo[2], baseImageInfo[3], baseImageInfo[5])
-
-        return (
-            userDirPath,
-            baseImage,
-            self.getMainServicesForVmiID(vmiID),
-            self.getDepPkgInfoSetForVMI(vmiID)
         )
 
     def getDataForAllVMIs(self):
@@ -750,8 +783,24 @@ class RepositoryDatabase:
 
         return vmiNames
 
-
-
-
-
-
+    def getVmiMetaInfo(self, vmiID):
+        self.cursor.execute('''
+                    SELECT distribution, version, architecture, pkgManager
+                    FROM baseImageRepository
+                    WHERE baseID = (
+                      SELECT baseImageID
+                      FROM vmiRepository
+                      WHERE vmiID = ?
+                    )''',
+                    (vmiID,)
+                    )
+        result = self.cursor.fetchall()
+        if len(result) == 0:
+            sys.exit("ERROR in database: cannot find distribution for VMI with ID \"%s\""
+                     % vmiID)
+        else:
+            return (str(result[0][0]),
+                    str(result[0][1]),
+                    str(result[0][2]),
+                    str(result[0][3])
+                    )

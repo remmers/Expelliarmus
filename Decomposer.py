@@ -27,73 +27,6 @@ class Decomposer:
                     sys.exit("Error: Main Service \"" + pkgName + "\" does not exist in " + vmi.vmiName)
 
     @staticmethod
-    def exportPackages(vmi, manipulator, evalDecomp=None):
-        """
-
-        :return: returns BaseImage instance
-        """
-        # Collect packages that should be exported (main services and their dependencies)
-        # in the form of {pkg,{name:"pkg", version:"1.1", architecture:"amd64", essential:False}}
-        #packageDict = self.graph.getNodeDataFromSubTrees(self.mainServices)
-        packageDict = vmi.getNodeDataFromSubTrees(vmi.mainServices)
-        numAllPackages = len(packageDict)
-
-        # Save install sizes of required/exported Packages
-        sumSizesReqPkgs = 0
-        sumSizesExpPkgs = 0
-
-        # Remove packages that already exist in host repository
-        tmp = dict(packageDict)
-        with RepositoryDatabase() as repoManager:
-            for pkg, pkgInfo in tmp.iteritems():
-                if repoManager.packageExists(pkg,
-                                             pkgInfo[VMIGraph.GNodeAttrVersion],
-                                             pkgInfo[VMIGraph.GNodeAttrArchitecture],
-                                             vmi.distribution):
-                    del packageDict[pkg]
-                    sumSizesReqPkgs = sumSizesReqPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
-                else:
-                    sumSizesReqPkgs = sumSizesReqPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
-                    sumSizesExpPkgs = sumSizesExpPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
-
-        numReqPackages = len(packageDict)
-
-        # Export packages from VMI
-        print "Package Export:\n" \
-              "\tMain Services:\t\t\t\t%s\n" \
-              "\tPackage(s) required:\t\t%i\n" \
-              "\tAlready existing locally:\t%i\n" \
-              "\tPackages to be exported:\t%i" \
-              % (",".join(vmi.mainServices),numAllPackages, numAllPackages - numReqPackages, numReqPackages)
-
-        if numReqPackages > 0:
-            packageInfoDict = manipulator.exportPackages(packageDict)
-
-            # Update Repository Database
-            with RepositoryDatabase() as repoManager:
-                repoManager.addPackageDict(packageInfoDict, vmi.distribution)
-        if evalDecomp is not None:
-            evalDecomp.reqPkgsNum = numAllPackages
-            evalDecomp.expPkgsNum = numReqPackages
-            evalDecomp.reqPkgsSize = sumSizesReqPkgs
-            evalDecomp.expPkgsSize = sumSizesExpPkgs
-
-    @staticmethod
-    def removePackages(vmi, manipulator, guest, root):
-        # Remove Packages from VMI
-        print "Package Removal:\n\t" \
-              "%i main service(s) and not required dependencies are removed..."\
-              % len(vmi.mainServices)
-        manipulator.removePackages(vmi.mainServices)
-
-        # create descriptor for reduced vmi (which is now base image)
-        numPackagesBefore = len(vmi.graph.nodes())
-        baseImage = vmi.getBaseImageDescriptor(guest,root)
-        numPackagesAfter = len(baseImage.graph.nodes())
-        print "\tin total, %i packages have been removed" % (numPackagesBefore-numPackagesAfter)
-        return baseImage
-
-    @staticmethod
     def decompose(pathToVMI, vmiName, mainServices, evalSimToMaster=None, evalDecomp=None):
         print "\n=== Decompose VMI \"%s\"\nFilename: \"%s\"" % (vmiName, pathToVMI)
 
@@ -104,8 +37,10 @@ class Decomposer:
             if repoManager.vmiExists(vmiName):
                 sys.exit("Error: Cannot decompose VMI \"%s\". A VMI with that name already exists in the database!" % vmiName)
 
+        print ('Creating GuestFS Handler...')
         (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
-        vmi = VMIDescriptor(pathToVMI, vmiName, mainServices, guest, root)
+        print ('Creating VMI Graph...')
+        vmi = VMIDescriptor(pathToVMI, vmiName, mainServices, guest, root, verbose=True)
 
         print "VMI Information:\n" \
               "\tDistribution:\t%s\n" \
@@ -236,6 +171,73 @@ class Decomposer:
                     baseImageTreatmentString = "New base image added as \"%s\"" % chosenBaseImage.pathToVMI.split("/")[-1]
                 evalDecomp.baseImageInfo = baseImageTreatmentString
 
+    @staticmethod
+    def exportPackages(vmi, manipulator, evalDecomp=None):
+        """
+
+        :return: returns BaseImage instance
+        """
+        # Collect packages that should be exported (main services and their dependencies)
+        # in the form of {pkg,{name:"pkg", version:"1.1", architecture:"amd64", essential:False}}
+        #packageDict = self.graph.getNodeDataFromSubTrees(self.mainServices)
+        packageDict = vmi.getNodeDataFromSubTrees(vmi.mainServices)
+        numAllPackages = len(packageDict)
+
+        # Save install sizes of required/exported Packages
+        sumSizesReqPkgs = 0
+        sumSizesExpPkgs = 0
+
+        # Remove packages that already exist in host repository
+        tmp = dict(packageDict)
+        with RepositoryDatabase() as repoManager:
+            for pkg, pkgInfo in tmp.iteritems():
+                if repoManager.packageExists(pkg,
+                                             pkgInfo[VMIGraph.GNodeAttrVersion],
+                                             pkgInfo[VMIGraph.GNodeAttrArchitecture],
+                                             vmi.distribution):
+                    del packageDict[pkg]
+                    sumSizesReqPkgs = sumSizesReqPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+                else:
+                    sumSizesReqPkgs = sumSizesReqPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+                    sumSizesExpPkgs = sumSizesExpPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+
+        numReqPackages = len(packageDict)
+
+        # Export packages from VMI
+        print "Package Export:\n" \
+              "\tMain Services:\t\t\t\t%s\n" \
+              "\tPackage(s) required:\t\t%i\n" \
+              "\tAlready existing locally:\t%i\n" \
+              "\tPackages to be exported:\t%i" \
+              % (",".join(vmi.mainServices),numAllPackages, numAllPackages - numReqPackages, numReqPackages)
+
+        if numReqPackages > 0:
+            packageInfoDict = manipulator.exportPackages(packageDict)
+
+            # Update Repository Database
+            with RepositoryDatabase() as repoManager:
+                repoManager.addPackageDict(packageInfoDict, vmi.distribution)
+        if evalDecomp is not None:
+            evalDecomp.reqPkgsNum = numAllPackages
+            evalDecomp.expPkgsNum = numReqPackages
+            evalDecomp.reqPkgsSize = sumSizesReqPkgs
+            evalDecomp.expPkgsSize = sumSizesExpPkgs
+
+    @staticmethod
+    def removePackages(vmi, manipulator, guest, root):
+        # Remove Packages from VMI
+        print "Package Removal:\n\t" \
+              "%i main service(s) and not required dependencies are removed..."\
+              % len(vmi.mainServices)
+        manipulator.removePackages(vmi.mainServices)
+
+        # create descriptor for reduced vmi (which is now base image)
+        numPackagesBefore = len(vmi.graph.nodes())
+        baseImage = vmi.getBaseImageDescriptor(guest,root)
+        numPackagesAfter = len(baseImage.graph.nodes())
+        print "\tin total, %i packages have been removed" % (numPackagesBefore-numPackagesAfter)
+        return baseImage
+
 
     @staticmethod
     def moveBaseImageToRepository(baseImage):
@@ -281,28 +283,28 @@ class Decomposer:
             return (newBaseImage,list())
 
         compatibilities = defaultdict(dict)
-        # in form       B1      B2      B3
-        #           B1  True    False   False
-        #           B2  False   True    True
-        #           B3  True    False   True
+        # in form       B1      B2      B3      count   new
+        #           B1  True    False   False   1       1
+        #           B2  False   True    True    2       0
+        #           B3  True    False   True    2       0
         #
         #           compatibilities[B3][B1] = True  -> means main services of B1 are compatible in B3
         #                                           -> B3 can replace B1
-        allBaseImagesDict = dict(existingBaseImagesAndMSPackages)
-        allBaseImagesDict[newBaseImage] = newMSPackages
+        allBaseImagesAndMSPkgs = dict(existingBaseImagesAndMSPackages)
+        allBaseImagesAndMSPkgs[newBaseImage] = newMSPackages
         # by row
-        for b1 in allBaseImagesDict.keys():
+        for b1 in allBaseImagesAndMSPkgs.keys():
+            if b1 == newBaseImage:
+                compatibilities[b1]["new"] = 1
+            else:
+                compatibilities[b1]["new"] = 0
+
             compatibilities[b1]["count"] = 0
             rowString = ""
             # by column
-            for b2 in allBaseImagesDict.keys():
+            for b2 in allBaseImagesAndMSPkgs.keys():
                 # if same or compatible
-                if b1 == newBaseImage:
-                    compatibilities[b1]["new"] = 1
-                else:
-                    compatibilities[b1]["new"] = 0
-
-                if b1 == b2 or b1.checkCompatibilityForPackages(allBaseImagesDict[b2]):
+                if b1 == b2 or b1.checkCompatibilityForPackages(allBaseImagesAndMSPkgs[b2]):
                     compatibilities[b1][b2] = True
                     compatibilities[b1]["count"] = compatibilities[b1]["count"] + 1
                 else:
@@ -315,8 +317,8 @@ class Decomposer:
         sortedBaseImages = sorted(compatibilities.keys(),
                                   key=lambda baseImage: (
                                       -compatibilities[baseImage]["count"],
-                                      baseImage.getNumberOfPackages(),
-                                      compatibilities[b1]["new"]
+                                      int(baseImage.getPkgsInstallSize()),
+                                      compatibilities[baseImage]["new"]
                                   ))
         #print "Sorted base images by 1. incr. comp count, 2. decr. #(pkgs)"
         #for baseImage in sortedBaseImages:
@@ -327,7 +329,7 @@ class Decomposer:
             # chosen base image is the new one or the chosen one is compatible with the MSpackages from the new one
             if candidateBaseImage == newBaseImage or compatibilities[candidateBaseImage][newBaseImage] == True:
                 replacingList = list()
-                for baseImageToReplace in allBaseImagesDict.keys():
+                for baseImageToReplace in allBaseImagesAndMSPkgs.keys():
                     if candidateBaseImage != baseImageToReplace and compatibilities[candidateBaseImage][baseImageToReplace] == True:
                         replacingList.append(baseImageToReplace)
                 return (candidateBaseImage,replacingList)
