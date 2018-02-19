@@ -12,7 +12,7 @@ from Reassembler import Reassembler
 from RepositoryDatabase import RepositoryDatabase
 from StaticInfo import StaticInfo
 from VMIDescription import VMIDescriptor
-from Evaluation import SimilarityToMasterEvaluation, SimilarityToAllEvaluation, DecompositionEvaluation, \
+from Evaluation import SimilarityToAllEvaluation, DecompositionEvaluation, \
     ReassemblingEvaluation
 
 
@@ -33,11 +33,6 @@ class Expelliarmus:
         if not os.path.isdir(StaticInfo.relPathLocalRepositoryUserFolders):
             os.mkdir(StaticInfo.relPathLocalRepositoryUserFolders)
 
-    def runSimilarity(self):
-        SimilarityCalculator.computeSimilarityOneToOne("VMIs/VMI_ug_fcegv.img", ["eclipse"],
-                                             "VMIs/VMI_ug_fcgv.img", ["gimp"],
-                                                       onlyOnMainServices=True)
-
     def getDirSize(self, start_path):
         total_size = 0
         for dirpath, dirnames, filenames in os.walk(start_path):
@@ -52,48 +47,20 @@ class Expelliarmus:
             for vmiData in vmiDataList:
                 print vmiData
 
-    def evaluateSimToMasterOnce(self, evalLogPath):
-        simToMasterEval = SimilarityToMasterEvaluation(evalLogPath)
+    def evaluateSimBetweenAll(self, distribution, onlyOnMainServices):
+        if onlyOnMainServices:
+            evalLogPath = "Evaluation/" + distribution + "_evaluation_simToAll_MS.csv"
+        else:
+            evalLogPath = "Evaluation/" + distribution + "_evaluation_simToAll_General.csv"
 
         sortedVmiFileNames = self.getSortedListOfAllVMIs()
-        for vmiFileName in sortedVmiFileNames:
-            vmiPath = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName
-            vmiMetaDataPath = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName.rsplit(".", 1)[0] + ".meta"
-            vmiMetaData = open(vmiMetaDataPath).read().split("\n")[0].split(";")
-            mainServices = vmiMetaData[2].split(",")
-
-            Decomposer.decompose(vmiPath, vmiFileName, mainServices, evalSimToMaster=simToMasterEval)
-            os.remove(vmiMetaDataPath)
-
-            simToMasterEval.newLine()
-        simToMasterEval.saveEvaluation()
-
-    def evaluateSimToMaster(self):
-        self.resetRepo()
-        vmiBackupFolder = "VMI_Backups/fedora"
-
-        shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
-        origSize = self.getDirSize(vmiBackupFolder)
-        print "Copy VMIs from \"%s\" to \"%s\":" % (vmiBackupFolder, StaticInfo.relPathLocalVMIFolder)
-        t = Thread(target=shutil.copytree, args=[vmiBackupFolder, StaticInfo.relPathLocalVMIFolder])
-        t.start()
-        while t.isAlive():
-            time.sleep(2)
-            sys.stdout.write(
-                "\r\tProgress: %.1f%%" % (float(self.getDirSize(StaticInfo.relPathLocalVMIFolder)) / origSize * 100))
-            sys.stdout.flush()
-        print ""
-
-        self.checkFolderExistence()
-        self.evaluateSimToMasterOnce("Evaluation/Fedora_simToMaster.csv")
-
-    def evaluateSimBetweenAll(self, evalLogPath, onlyOnMainServices):
-        sortedVmiFileNames = self.getSortedListOfAllVMIs()
+        sortedVmiFileNamesNoSnapshots = [ x for x in sortedVmiFileNames if "Snapshot" not in x]
         sortedVmiFileNamesAndMS = self.getSortedListOfAllVMIsAndMS()
+        sortedVmiFileNamesAndMSNoSnapshots = [ (x,y) for (x,y) in sortedVmiFileNamesAndMS if "Snapshot" not in x]
 
-        evalSimToMaster = SimilarityToAllEvaluation(evalLogPath, sortedVmiFileNames)
+        evalSimToMaster = SimilarityToAllEvaluation(evalLogPath, sortedVmiFileNamesNoSnapshots)
 
-        evalSimToMaster.similarities = SimilarityCalculator.computeSimilarityManyToMany(sortedVmiFileNamesAndMS, onlyOnMainServices=onlyOnMainServices)
+        evalSimToMaster.similarities = SimilarityCalculator.computeSimilarityManyToMany(sortedVmiFileNamesAndMSNoSnapshots, onlyOnMainServices=onlyOnMainServices)
 
         evalSimToMaster.saveEvaluation()
 
@@ -127,17 +94,17 @@ class Expelliarmus:
 
             evalDecomp.sumRepoStorageSize = repoStorageSize
             evalDecomp.dbSize = os.path.getsize(StaticInfo.relPathLocalRepositoryDatabase)
-            evalDecomp.decompTime = decompTime
+            evalDecomp.timeDecompAll = decompTime
             evalDecomp.newLine()
             os.remove(vmiMetaDataPath)
         evalDecomp.saveEvaluation()
 
-    def evaluateDecomposition(self):
-        vmiBackupFolder = "VMI_Backups/fedora"
+    def evaluateDecomposition(self, distribution, numberOfEvaluations):
+        vmiBackupFolder = "VMI_Backups/" + distribution
 
-        for i in [1,2,3,4,5]:
+        for i in range(1,numberOfEvaluations+1):
             self.resetRepo()
-            print "Copy VMIs from \"%s\" to \"%s\":" % (vmiBackupFolder, StaticInfo.relPathLocalVMIFolder)
+            print "Copy VMIs from \"%s\" to \"%s\":\n" % (vmiBackupFolder, StaticInfo.relPathLocalVMIFolder)
             shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
 
             origSize = self.getDirSize(vmiBackupFolder)
@@ -148,9 +115,8 @@ class Expelliarmus:
                 sys.stdout.write("\r\tProgress: %.1f%%" % (float(self.getDirSize(StaticInfo.relPathLocalVMIFolder)) / origSize * 100))
                 sys.stdout.flush()
             print ""
-
             self.checkFolderExistence()
-            self.evaluateDecompositionOnce("Evaluation/Fedora_decomp_eval_" + str(i) + ".csv")
+            self.evaluateDecompositionOnce("Evaluation/" + distribution + "_evaluation_decomp_" + str(i) + ".csv")
 
     def evaluateDecompositionNoRedundancyOnce(self, evalLogFileName):
         evalDecomp = DecompositionEvaluation(evalLogFileName)
@@ -185,15 +151,15 @@ class Expelliarmus:
 
             evalDecomp.sumRepoStorageSize = repoStorageSize
             evalDecomp.dbSize = os.path.getsize(StaticInfo.relPathLocalRepositoryDatabase)
-            evalDecomp.decompTime = decompTime
+            evalDecomp.timeDecompAll = decompTime
             evalDecomp.newLine()
             os.remove(vmiMetaDataPath)
         evalDecomp.saveEvaluation()
 
-    def evaluateDecompositionNoRedundancy(self):
-        vmiBackupFolder = "VMI_Backups/fedora"
-        for i in [1,2,3,4,5]:
-            print "Copy VMIs from \"%s\" to \"%s\":" % (vmiBackupFolder, StaticInfo.relPathLocalVMIFolder)
+    def evaluateDecompositionNoRedundancy(self, distribution, numberOfEvaluations):
+        vmiBackupFolder = "VMI_Backups/" + distribution
+        for i in range(1,numberOfEvaluations+1):
+            print "Copy VMIs from \"%s\" to \"%s\":\n" % (vmiBackupFolder, StaticInfo.relPathLocalVMIFolder)
             shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
 
             origSize = self.getDirSize(vmiBackupFolder)
@@ -207,21 +173,23 @@ class Expelliarmus:
             print ""
 
             self.checkFolderExistence()
-            self.evaluateDecompositionNoRedundancyOnce("Evaluation/Fedora_decomp_eval_noRedundancy_" + str(i) + ".csv")
+            self.evaluateDecompositionNoRedundancyOnce("Evaluation/" + distribution + "_evaluation_decomp_noRedundancy_" + str(i) + ".csv")
 
     def evaluateReassemblingOnce(self, evalLogFileName):
         evalReassembly = ReassemblingEvaluation(evalLogFileName)
         with RepositoryDatabase() as repoManager:
             vmiNameList = repoManager.getAllVmiNames()
 
+        vmiNameListNoSnapshots = [x for x in vmiNameList if "Snapshot" not in x]
+
         i = 0
-        for vmiName in vmiNameList:
+        for vmiName in vmiNameListNoSnapshots:
             i = i + 1
             print "============================="
-            print "        VMI %i/%i" % (i, len(vmiNameList))
+            print "        VMI %i/%i" % (i, len(vmiNameListNoSnapshots))
             print "============================="
-            #shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
-            #os.mkdir(StaticInfo.relPathLocalVMIFolder)
+            shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+            os.mkdir(StaticInfo.relPathLocalVMIFolder)
             startTime = time.time()
             pathToNewVMI = Reassembler.reassemble(vmiName, evalReassembly=evalReassembly)
             reassemblingTime = time.time() - startTime
@@ -231,11 +199,11 @@ class Expelliarmus:
             evalReassembly.newLine()
         evalReassembly.saveEvaluation()
 
-    def evaluateReassembling(self):
-        for i in [4,5]:
+    def evaluateReassembling(self, distribution, numberOfEvaluations):
+        for i in range(1, numberOfEvaluations + 1):
             shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
             os.mkdir(StaticInfo.relPathLocalVMIFolder)
-            self.evaluateReassemblingOnce("Evaluation/Fedora_reassembly_eval_" + str(i) + ".csv")
+            self.evaluateReassemblingOnce("Evaluation/" + distribution + "_evaluation_reassembly_" + str(i) + ".csv")
 
     def getSortedListOfAllVMIs(self):
         vmiList = list()
@@ -253,7 +221,7 @@ class Expelliarmus:
 
     def getSortedListOfAllVMIsAndMS(self):
         """
-        :return: [vmiFilename,[MS1,MS2]]
+        :return: [(vmiFilename,[MS1,MS2])]
         """
         vmiTriples = list()
         for filename in os.listdir(StaticInfo.relPathLocalVMIFolder):

@@ -4,8 +4,6 @@ from collections import defaultdict
 from StaticInfo import StaticInfo
 from GuestFSHelper import GuestFSHelper
 from VMIDescription import VMIDescriptor
-from VMIGraph import VMIGraph
-from VMIManipulation import VMIManipulator
 
 class SimilarityCalculator:
     @staticmethod
@@ -78,13 +76,12 @@ class SimilarityCalculator:
             pkg2Data = g2NodesDict[pkgName]
             if (
                     # Version has to be the same
-                            pkg1Data[VMIGraph.GNodeAttrVersion] == pkg2Data[VMIGraph.GNodeAttrVersion]
+                            pkg1Data[StaticInfo.dictKeyVersion] == pkg2Data[StaticInfo.dictKeyVersion]
                     # Architecture has to be the same, or at least on has to say all
                     and (
-                                        pkg1Data[VMIGraph.GNodeAttrArchitecture] == pkg2Data[
-                                        VMIGraph.GNodeAttrArchitecture]
-                                or pkg1Data[VMIGraph.GNodeAttrArchitecture] == "all"
-                            or pkg2Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                            pkg1Data[StaticInfo.dictKeyArchitecture] == pkg2Data[StaticInfo.dictKeyArchitecture]
+                            or pkg1Data[StaticInfo.dictKeyArchitecture] == "all"
+                            or pkg2Data[StaticInfo.dictKeyArchitecture] == "all"
                     )
             ):
                 numMatches = numMatches + 1
@@ -155,23 +152,23 @@ class SimilarityCalculator:
         maxInstallSize = 0
         for pkg in nodesToCheck:
             if pkg in g1NodesDict:
-                maxInstallSize = max(maxInstallSize, int(g1NodesDict[pkg][VMIGraph.GNodeAttrInstallSize]))
+                maxInstallSize = max(maxInstallSize, int(g1NodesDict[pkg][StaticInfo.dictKeyInstallSize]))
             if pkg in g2NodesDict:
-                maxInstallSize = max(maxInstallSize, int(g2NodesDict[pkg][VMIGraph.GNodeAttrInstallSize]))
+                maxInstallSize = max(maxInstallSize, int(g2NodesDict[pkg][StaticInfo.dictKeyInstallSize]))
 
         # calculate sumNormSizeAll as sum of normalized sizes (weights)
         sumNormSizeAll = 0.0
         for pkg in nodesToCheck:
             if pkg in g1NodesDict and pkg in g2NodesDict:
                 sumNormSizeAll = sumNormSizeAll +\
-                                 max(g1NodesDict[pkg][VMIGraph.GNodeAttrInstallSize],
-                                     g2NodesDict[pkg][VMIGraph.GNodeAttrInstallSize])/maxInstallSize
+                                 max(g1NodesDict[pkg][StaticInfo.dictKeyInstallSize],
+                                     g2NodesDict[pkg][StaticInfo.dictKeyInstallSize])/maxInstallSize
             elif pkg in g1NodesDict:
                 sumNormSizeAll = sumNormSizeAll + \
-                                 float(g1NodesDict[pkg][VMIGraph.GNodeAttrInstallSize]) / maxInstallSize
+                                 float(g1NodesDict[pkg][StaticInfo.dictKeyInstallSize]) / maxInstallSize
             elif pkg in g2NodesDict:
                 sumNormSizeAll = sumNormSizeAll + \
-                                 float(g2NodesDict[pkg][VMIGraph.GNodeAttrInstallSize]) / maxInstallSize
+                                 float(g2NodesDict[pkg][StaticInfo.dictKeyInstallSize]) / maxInstallSize
 
         # prefilter nodesToCheck by name occurring in both graphs
         nodesToCheck = nodesToCheck.intersection(set(g1NodesDict.keys()))
@@ -186,18 +183,18 @@ class SimilarityCalculator:
             pkg2Data = g2NodesDict[pkgName]
             if (
                     # Version has to be the same
-                    pkg1Data[VMIGraph.GNodeAttrVersion] == pkg2Data[VMIGraph.GNodeAttrVersion]
+                    pkg1Data[StaticInfo.dictKeyVersion] == pkg2Data[StaticInfo.dictKeyVersion]
                     # Architecture has to be the same, or at least on has to say all
                     and (
-                            pkg1Data[VMIGraph.GNodeAttrArchitecture] == pkg2Data[VMIGraph.GNodeAttrArchitecture]
-                            or pkg1Data[VMIGraph.GNodeAttrArchitecture] == "all"
-                            or pkg2Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                            pkg1Data[StaticInfo.dictKeyArchitecture] == pkg2Data[StaticInfo.dictKeyArchitecture]
+                            or pkg1Data[StaticInfo.dictKeyArchitecture] == "all"
+                            or pkg2Data[StaticInfo.dictKeyArchitecture] == "all"
                     )
             ):
                 numMatches = numMatches + 1
                 sumNormSizeMatches = sumNormSizeMatches\
-                                     + max(pkg1Data[VMIGraph.GNodeAttrInstallSize],
-                                           pkg2Data[VMIGraph.GNodeAttrInstallSize])/maxInstallSize
+                                     + max(pkg1Data[StaticInfo.dictKeyInstallSize],
+                                           pkg2Data[StaticInfo.dictKeyInstallSize])/maxInstallSize
 
         similarity = float(sumNormSizeMatches) / float(sumNormSizeAll)
 

@@ -7,8 +7,6 @@ from collections import defaultdict
 
 from StaticInfo import StaticInfo
 from VMIDescription import BaseImageDescriptor, VMIMasterDescriptor
-from VMIGraph import VMIGraph
-
 
 class RepositoryDatabase:
     def __init__(self,forceNew=False):
@@ -187,12 +185,12 @@ class RepositoryDatabase:
 
     def addPackageDict(self, packageInfoDict, distribution):
         packageInfoList = [(
-            pkgInfo[VMIGraph.GNodeAttrName],
-            pkgInfo[VMIGraph.GNodeAttrVersion],
-            pkgInfo[VMIGraph.GNodeAttrArchitecture],
+            pkgInfo[StaticInfo.dictKeyName],
+            pkgInfo[StaticInfo.dictKeyVersion],
+            pkgInfo[StaticInfo.dictKeyArchitecture],
             distribution,
-            pkgInfo[VMIGraph.GNodeAttrInstallSize],
-            pkgInfo[VMIGraph.GNodeAttrFilePath]
+            pkgInfo[StaticInfo.dictKeyInstallSize],
+            pkgInfo[StaticInfo.dictKeyFilePath]
         ) for pkg,pkgInfo in packageInfoDict.iteritems()]
         self.cursor.executemany('''
                       INSERT INTO PackageRepository(name, version, architecture, distribution, installsize, filename)
@@ -519,8 +517,8 @@ class RepositoryDatabase:
         # format: [(vmiID,pkgID,deppkgName, deppkgVersion, deppkgArch, deppkgDistribution)]
         for mainServiceName,pkgDict in mainServicesDepList:
             mainServiceID = self.getPackageID(mainServiceName,
-                                              pkgDict[mainServiceName][VMIGraph.GNodeAttrVersion],
-                                              pkgDict[mainServiceName][VMIGraph.GNodeAttrArchitecture],
+                                              pkgDict[mainServiceName][StaticInfo.dictKeyVersion],
+                                              pkgDict[mainServiceName][StaticInfo.dictKeyArchitecture],
                                               distribution)
             assert(mainServiceID != None)
             for depName,depInfo in pkgDict.iteritems():
@@ -529,8 +527,8 @@ class RepositoryDatabase:
                         vmiID,
                         mainServiceID,
                         depName,
-                        depInfo[VMIGraph.GNodeAttrVersion],
-                        depInfo[VMIGraph.GNodeAttrArchitecture],
+                        depInfo[StaticInfo.dictKeyVersion],
+                        depInfo[StaticInfo.dictKeyArchitecture],
                         distribution
                     ))
         self.cursor.executemany('''
@@ -614,9 +612,9 @@ class RepositoryDatabase:
                 (
                     str(row[0]),
                     {
-                        VMIGraph.GNodeAttrName: str(row[0]),
-                        VMIGraph.GNodeAttrVersion: str(row[1]),
-                        VMIGraph.GNodeAttrArchitecture: str(row[2])
+                        StaticInfo.dictKeyName: str(row[0]),
+                        StaticInfo.dictKeyVersion: str(row[1]),
+                        StaticInfo.dictKeyArchitecture: str(row[2])
                     }
 
                 ) for row in result )
@@ -672,11 +670,11 @@ class RepositoryDatabase:
             pkgInfoDict = defaultdict(dict)
             for row in result:
                 pkgInfoDict[row[0]] = {
-                    VMIGraph.GNodeAttrName: str(row[0]),
-                    VMIGraph.GNodeAttrVersion: str(row[1]),
-                    VMIGraph.GNodeAttrArchitecture: str(row[2]),
-                    VMIGraph.GNodeAttrInstallSize: str(row[3]),
-                    VMIGraph.GNodeAttrFilePath: str(row[4])
+                    StaticInfo.dictKeyName: str(row[0]),
+                    StaticInfo.dictKeyVersion: str(row[1]),
+                    StaticInfo.dictKeyArchitecture: str(row[2]),
+                    StaticInfo.dictKeyInstallSize: str(row[3]),
+                    StaticInfo.dictKeyFilePath: str(row[4])
                 }
             return pkgInfoDict
         else:
@@ -710,11 +708,11 @@ class RepositoryDatabase:
             pkgInfoDict = defaultdict(dict)
             for row in result:
                 pkgInfoDict[row[0]] = {
-                    VMIGraph.GNodeAttrName: str(row[0]),
-                    VMIGraph.GNodeAttrVersion: str(row[1]),
-                    VMIGraph.GNodeAttrArchitecture: str(row[2]),
-                    VMIGraph.GNodeAttrInstallSize: str(row[3]),
-                    VMIGraph.GNodeAttrFilePath: str(row[4])
+                    StaticInfo.dictKeyName: str(row[0]),
+                    StaticInfo.dictKeyVersion: str(row[1]),
+                    StaticInfo.dictKeyArchitecture: str(row[2]),
+                    StaticInfo.dictKeyInstallSize: str(row[3]),
+                    StaticInfo.dictKeyFilePath: str(row[4])
                 }
             return pkgInfoDict
         else:

@@ -65,19 +65,19 @@ class VMIGraph:
             essentialPkg = True if lineData[Q.Essential] == "yes" else False
             pkgsInfo.append((lineData[Q.Name],
                              {
-                                 VMIGraph.GNodeAttrName: lineData[Q.Name],
-                                 VMIGraph.GNodeAttrVersion: lineData[Q.Version],
-                                 VMIGraph.GNodeAttrArchitecture: lineData[Q.Arch],
-                                 VMIGraph.GNodeAttrEssential: essentialPkg,
-                                 VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize],
-                                 VMIGraph.GNodeAttrFilePath: None
+                                 StaticInfo.dictKeyName: lineData[Q.Name],
+                                 StaticInfo.dictKeyVersion: lineData[Q.Version],
+                                 StaticInfo.dictKeyArchitecture: lineData[Q.Arch],
+                                 StaticInfo.dictKeyEssential: essentialPkg,
+                                 StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize],
+                                 StaticInfo.dictKeyFilePath: None
                             }))
-            pkgHelperDict[lineData[Q.Name]] = {VMIGraph.GNodeAttrName: lineData[Q.Name],
-                                               VMIGraph.GNodeAttrVersion: lineData[Q.Version],
-                                               VMIGraph.GNodeAttrArchitecture: lineData[Q.Arch],
-                                               VMIGraph.GNodeAttrEssential: essentialPkg,
-                                               VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize],
-                                               VMIGraph.GNodeAttrFilePath: None}
+            pkgHelperDict[lineData[Q.Name]] = {StaticInfo.dictKeyName: lineData[Q.Name],
+                                               StaticInfo.dictKeyVersion: lineData[Q.Version],
+                                               StaticInfo.dictKeyArchitecture: lineData[Q.Arch],
+                                               StaticInfo.dictKeyEssential: essentialPkg,
+                                               StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize],
+                                               StaticInfo.dictKeyFilePath: None}
 
         # List of edge data (fromNode, toNode and attributes)
         depList = []  # in the form of [(pkg,deppkg,{constraint:True, operator:">=", version:"1.6"})]
@@ -100,7 +100,7 @@ class VMIGraph:
                         #    ZarchSpecified = depPkgArch == None
                         #    ZarchAny       = depPkgArch == "any"
                         #    ZArchAllAllowed= pkgHelperDict[depPkgName]["architecture"] == "all"
-                        if depPkgName in pkgHelperDict and (depPkgArch == None or depPkgArch == "any" or pkgHelperDict[depPkgName][VMIGraph.GNodeAttrArchitecture] == "all"):
+                        if depPkgName in pkgHelperDict and (depPkgArch == None or depPkgArch == "any" or pkgHelperDict[depPkgName][StaticInfo.dictKeyArchitecture] == "all"):
                             constraint = False
                             operator = ""
                             version = ""
@@ -113,9 +113,9 @@ class VMIGraph:
                                 version = versConstraintTuple[1]
                             depList.append((lineData[Q.Name],depPkgName,
                                             {
-                                                VMIGraph.GEdgeAttrConstraint:constraint,
-                                                VMIGraph.GEdgeAttrOperator:operator,
-                                                VMIGraph.GEdgeAttrVersion:version}))
+                                                StaticInfo.dictKeyConstraint:constraint,
+                                                StaticInfo.dictKeyOperator:operator,
+                                                StaticInfo.dictKeyVersion:version}))
                             break # innermost for loop: possible packages that satisfy dependency, first is taken here
 
         # Fill Graph with nodes and edges
@@ -162,19 +162,19 @@ class VMIGraph:
             else:
                 pkgsInfo.append((lineData[Q.Name],
                                  {
-                                     VMIGraph.GNodeAttrName: lineData[Q.Name],
-                                     VMIGraph.GNodeAttrVersion: lineData[Q.Version],
-                                     VMIGraph.GNodeAttrArchitecture: lineData[Q.Arch],
-                                     VMIGraph.GNodeAttrEssential: False,
-                                     VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize],
-                                     VMIGraph.GNodeAttrFilePath: None
+                                     StaticInfo.dictKeyName: lineData[Q.Name],
+                                     StaticInfo.dictKeyVersion: lineData[Q.Version],
+                                     StaticInfo.dictKeyArchitecture: lineData[Q.Arch],
+                                     StaticInfo.dictKeyEssential: False,
+                                     StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize],
+                                     StaticInfo.dictKeyFilePath: None
                                  }))
-                pkgHelperDict[lineData[Q.Name]] = {VMIGraph.GNodeAttrName: lineData[Q.Name],
-                                                   VMIGraph.GNodeAttrVersion: lineData[Q.Version],
-                                                   VMIGraph.GNodeAttrArchitecture: lineData[Q.Arch],
-                                                   VMIGraph.GNodeAttrEssential: False,
-                                                   VMIGraph.GNodeAttrInstallSize: lineData[Q.InstallSize],
-                                                   VMIGraph.GNodeAttrFilePath: None}
+                pkgHelperDict[lineData[Q.Name]] = {StaticInfo.dictKeyName: lineData[Q.Name],
+                                                   StaticInfo.dictKeyVersion: lineData[Q.Version],
+                                                   StaticInfo.dictKeyArchitecture: lineData[Q.Arch],
+                                                   StaticInfo.dictKeyEssential: False,
+                                                   StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize],
+                                                   StaticInfo.dictKeyFilePath: None}
 
         graph.add_nodes_from(pkgsInfo)
 
@@ -217,9 +217,9 @@ class VMIGraph:
                     depList.append((pkgName, depName))
                     depList.append((pkgName, depName,
                                     {
-                                        VMIGraph.GEdgeAttrConstraint: False,
-                                        VMIGraph.GEdgeAttrOperator: "",
-                                        VMIGraph.GEdgeAttrVersion: ""}))
+                                        StaticInfo.dictKeyConstraint: False,
+                                        StaticInfo.dictKeyOperator: "",
+                                        StaticInfo.dictKeyVersion: ""}))
 
                 else:
                     print "Not processed: %s -> %s" % (pkgName, depName)

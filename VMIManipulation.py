@@ -12,8 +12,6 @@ import subprocess
 import shutil
 
 from StaticInfo import StaticInfo
-from RepositoryDatabase import RepositoryDatabase
-from VMIGraph import VMIGraph
 
 
 class VMIManipulator:
@@ -226,7 +224,7 @@ class VMIManipulatorAPT(VMIManipulator):
                     pkgName = matchResult.group(1)
                     pkgFileName = matchResult.group(2)
                     pkgNewpath = self.local_packageFolder + "/" + pkgFileName
-                    packageInfoDict[pkgName][VMIGraph.GNodeAttrFilePath] = pkgNewpath
+                    packageInfoDict[pkgName][StaticInfo.dictKeyFilePath] = pkgNewpath
 
         # make sure every package in packageInfoDict has a path
         for pkg,pkgInfo in packageInfoDict.iteritems():
@@ -371,10 +369,11 @@ class VMIManipulatorDNF(VMIManipulator):
                 output = self.guest.sh("rpmrebuild --batch --comment-missing=yes --directory " + self.vmi_repackagingFolder + " " + pkgName)
                 for line in output.split("\n"):
                     if line.startswith("result: "):
-                        packageInfoDict[pkgName][VMIGraph.GNodeAttrFilePath] = self.local_packageFolder +\
+                        packageInfoDict[pkgName][StaticInfo.dictKeyFilePath] = self.local_packageFolder +\
                                                                                "/" + line.rsplit("/",1)[1]
                         break
-                if VMIGraph.GNodeAttrFilePath not in packageInfoDict[pkgName]:
+                # check if all packages were exported and received a filename
+                if StaticInfo.dictKeyFilePath not in packageInfoDict[pkgName]:
                     print "\t\tcould not find repackaged \"%s\"" % pkgName
                     print "\t\tOutput of repackaging:"
                     print "\t\t" + str(output)

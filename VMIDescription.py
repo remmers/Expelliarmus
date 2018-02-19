@@ -60,7 +60,7 @@ class BaseImageDescriptor():
     def getPkgsInstallSize(self):
         size = 0
         for pkg, pkgInfo in self.graph.nodes(data=True):
-            size = size + pkgInfo[StaticInfo.dictKeyInstallSize]
+            size = size + int(pkgInfo[StaticInfo.dictKeyInstallSize])
         return size
 
     def getSubGraphFromRoots(self, rootNodeList):
@@ -112,21 +112,20 @@ class BaseImageDescriptor():
                 pkg1Data = graphNodeData[pkg2Name]
                 if not (
                         # Version has to be the same
-                        pkg1Data[VMIGraph.GNodeAttrVersion] == pkg2Data[VMIGraph.GNodeAttrVersion]
+                        pkg1Data[StaticInfo.dictKeyVersion] == pkg2Data[StaticInfo.dictKeyVersion]
                         # Architecture has to be the same, or at least on has to say all
                         and (
-                            pkg1Data[VMIGraph.GNodeAttrArchitecture] == pkg2Data[
-                            VMIGraph.GNodeAttrArchitecture]
-                            or pkg1Data[VMIGraph.GNodeAttrArchitecture] == "all"
-                            or pkg2Data[VMIGraph.GNodeAttrArchitecture] == "all"
+                            pkg1Data[StaticInfo.dictKeyArchitecture] == pkg2Data[StaticInfo.dictKeyArchitecture]
+                            or pkg1Data[StaticInfo.dictKeyArchitecture] == "all"
+                            or pkg2Data[StaticInfo.dictKeyArchitecture] == "all"
                         )
                 ):
                     if verbose:
                         print "Failed Compatibility Check"
                         print "failed on package:"
                         print "\t" + pkg2Name
-                        print "\t" + pkg1Data[VMIGraph.GNodeAttrVersion] + " vs " + pkg2Data[VMIGraph.GNodeAttrVersion]
-                        print "\t" + pkg1Data[VMIGraph.GNodeAttrArchitecture] + " vs " + pkg2Data[VMIGraph.GNodeAttrArchitecture]
+                        print "\t" + pkg1Data[StaticInfo.dictKeyVersion] + " vs " + pkg2Data[StaticInfo.dictKeyVersion]
+                        print "\t" + pkg1Data[StaticInfo.dictKeyArchitecture] + " vs " + pkg2Data[StaticInfo.dictKeyArchitecture]
                     return False
         return True
 

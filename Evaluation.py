@@ -17,51 +17,6 @@ class Evaluation:
     @abstractmethod
     def newLine(self): pass
 
-class SimilarityToMasterEvaluation(Evaluation):
-    def __init__(self, evaluationLogPath):
-        super(SimilarityToMasterEvaluation, self).__init__(evaluationLogPath)
-        self.lines.append("VMI_filename;main services;"
-                          "highest similarity;base image with highest similarity;number of packages in master;Chosen Base Image;"
-                          "number of comparisons/master graphs;time for calculation [s]")
-        self.vmiFilename = None
-        self.vmiMainServices = None
-        self.simToMaster = None
-        self.masterPathToImage = None
-        self.masterNumPkgs = None
-        self.chosenBaseImage = None
-        self.comparisons = 0
-        self.timToCalc = None
-
-    def setSimilarity(self, simAndMasterList):
-        self.comparisons = len(simAndMasterList)
-        for (similarity,master) in simAndMasterList:
-            if self.simToMaster is None or similarity > self.simToMaster:
-                self.simToMaster = similarity
-                self.masterPathToImage = master.pathToVMI
-                self.masterNumPkgs = master.getNumberOfPackages()
-
-    def resetAttributes(self):
-        self.vmiFilename = None
-        self.vmiMainServices = None
-        self.simToMaster = None
-        self.masterPathToImage = None
-        self.masterNumPkgs = None
-        self.chosenBaseImage = None
-        self.comparisons = 0
-        self.timToCalc = None
-
-    def newLine(self):
-        self.lines.append(self.vmiFilename + ";" +
-                          ",".join(self.vmiMainServices) + ";" +
-                          str(self.simToMaster) + ";" +
-                          str(self.masterPathToImage) + ";" +
-                          str(self.masterNumPkgs) + ";" +
-                          str(self.chosenBaseImage) + ";" +
-                          str(self.comparisons) + ";" +
-                          str(self.timToCalc))
-        self.resetAttributes()
-
-
 class SimilarityToAllEvaluation(Evaluation):
     def __init__(self, evaluationLogPath, sortedVmiFileNames):
         super(SimilarityToAllEvaluation, self).__init__(evaluationLogPath)
@@ -86,20 +41,31 @@ class DecompositionEvaluation(Evaluation):
         # First line in output
         self.lines.append("vmiFilename;vmi main services;"
                           "sumOrigStorageSize[bytes];RepoStorageSize[bytes];dbSize[bytes];"
-                          "decompTime[s];"
+                          "timeDecomp[s];timeHandlerCreation[s];timeExport[s];"
                           "reqPkgsNum;expPkgsNum;"
                           "reqPkgsSize[kbytes];expPkgsSize[kbytes];"
-                          "baseImageInfo")
+                          "baseImageInfo;"
+                          "highest similarity;base with highest similarity;numPkgs in master;comparisons;time to calc sim")
         self.vmiFilename = None
         self.vmiMainServices = None
         self.sumRepoStorageSize = None
         self.dbSize = None
-        self.decompTime = None
+        self.timeDecompAll = None
+        self.timeHandlerCreation = None
+        self.timeExport = None
         self.reqPkgsNum = None
         self.expPkgsNum = None
         self.reqPkgsSize = None
         self.expPkgsSize = None
         self.baseImageInfo = None
+
+        # Info about calculation of similarity to master
+        self.comparisons = 0
+        self.simToMaster = None
+        self.masterPathToImage = None
+        self.masterNumPkgs = None
+        self.timeSimToMasterCalc = None
+
         # no reset, current VMI size is added
         self.sumOrigStorageSize = 0
 
@@ -108,13 +74,29 @@ class DecompositionEvaluation(Evaluation):
         self.vmiMainServices = None
         self.sumRepoStorageSize = None
         self.dbSize = None
-        self.decompTime = None
+        self.timeDecompAll = None
+        self.timeHandlerCreation = None
+        self.timeExport = None
         self.reqPkgsSize = None
         self.expPkgsSize = None
         self.baseImageInfo = None
 
+        self.comparisons = 0
+        self.simToMaster = None
+        self.masterPathToImage = None
+        self.masterNumPkgs = None
+        self.timeSimToMasterCalc = None
+
     def addVmiOrigSize(self, vmiOrigSize):
         self.sumOrigStorageSize = self.sumOrigStorageSize + vmiOrigSize
+
+    def setSimilarity(self, simAndMasterList):
+        self.comparisons = len(simAndMasterList)
+        for (similarity,master) in simAndMasterList:
+            if self.simToMaster is None or similarity > self.simToMaster:
+                self.simToMaster = similarity
+                self.masterPathToImage = master.pathToVMI
+                self.masterNumPkgs = master.getNumberOfPackages()
 
     def newLine(self):
         self.lines.append(self.vmiFilename + ";" +
@@ -122,12 +104,19 @@ class DecompositionEvaluation(Evaluation):
                           str(self.sumOrigStorageSize) + ";" +
                           str(self.sumRepoStorageSize) + ";" +
                           str(self.dbSize) + ";" +
-                          str(self.decompTime) + ";" +
+                          str(self.timeDecompAll) + ";" +
+                          str(self.timeHandlerCreation) + ";" +
+                          str(self.timeExport) + ";" +
                           str(self.reqPkgsNum) + ";" +
                           str(self.expPkgsNum) + ";" +
                           str(self.reqPkgsSize) + ";" +
                           str(self.expPkgsSize) + ";" +
-                          self.baseImageInfo)
+                          self.baseImageInfo + ";" +
+                          str(self.simToMaster) + ";" +
+                          str(self.masterPathToImage) + ";" +
+                          str(self.masterNumPkgs) + ";" +
+                          str(self.comparisons) + ";" +
+                          str(self.timeSimToMasterCalc))
         self.resetAttributes()
 
 class ReassemblingEvaluation(Evaluation):

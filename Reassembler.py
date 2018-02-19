@@ -6,7 +6,6 @@ import time
 from GuestFSHelper import GuestFSHelper
 from RepositoryDatabase import RepositoryDatabase
 from StaticInfo import StaticInfo
-from VMIGraph import VMIGraph
 from VMIManipulation import VMIManipulator
 from VMIDescription import BaseImageDescriptor
 
@@ -123,12 +122,12 @@ class Reassembler:
         for pkgName,pkgInfo in packageInfoDict.iteritems():
             if not (
                     pkgName in vmiPackageDict and
-                    vmiPackageDict[pkgName][VMIGraph.GNodeAttrVersion] == pkgInfo[VMIGraph.GNodeAttrVersion] and
-                    vmiPackageDict[pkgName][VMIGraph.GNodeAttrArchitecture] == pkgInfo[VMIGraph.GNodeAttrArchitecture]
+                    vmiPackageDict[pkgName][StaticInfo.dictKeyVersion] == pkgInfo[StaticInfo.dictKeyVersion] and
+                    vmiPackageDict[pkgName][StaticInfo.dictKeyArchitecture] == pkgInfo[StaticInfo.dictKeyArchitecture]
                 ):
-                reqPackagesFileNames.append(pkgInfo[VMIGraph.GNodeAttrFilePath])
-                reqPkgsSize = reqPkgsSize + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
-            allPkgsSize = allPkgsSize + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+                reqPackagesFileNames.append(pkgInfo[StaticInfo.dictKeyFilePath])
+                reqPkgsSize = reqPkgsSize + int(pkgInfo[StaticInfo.dictKeyInstallSize])
+            allPkgsSize = allPkgsSize + int(pkgInfo[StaticInfo.dictKeyInstallSize])
 
         reqPkgNum = len(reqPackagesFileNames)
         print "Package Import:\n\t" \

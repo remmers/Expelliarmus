@@ -8,7 +8,6 @@ from GuestFSHelper import GuestFSHelper
 from RepositoryDatabase import RepositoryDatabase
 from StaticInfo import StaticInfo
 from VMIDescription import BaseImageDescriptor, VMIDescriptor
-from VMIGraph import VMIGraph
 from VMIManipulation import VMIManipulator
 from VMISimilarity import SimilarityCalculator
 
@@ -27,7 +26,7 @@ class Decomposer:
                     sys.exit("Error: Main Service \"" + pkgName + "\" does not exist in " + vmi.vmiName)
 
     @staticmethod
-    def decompose(pathToVMI, vmiName, mainServices, evalSimToMaster=None, evalDecomp=None):
+    def decompose(pathToVMI, vmiName, mainServices, evalDecomp=None):
         print "\n=== Decompose VMI \"%s\"\nFilename: \"%s\"" % (vmiName, pathToVMI)
 
         if not os.path.isfile(pathToVMI):
@@ -38,7 +37,9 @@ class Decomposer:
                 sys.exit("Error: Cannot decompose VMI \"%s\". A VMI with that name already exists in the database!" % vmiName)
 
         print ('Creating GuestFS Handler...')
+        startTime = time.time()
         (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+        handlerCreationTime = time.time() - startTime
         print ('Creating VMI Graph...')
         vmi = VMIDescriptor(pathToVMI, vmiName, mainServices, guest, root, verbose=True)
 
@@ -52,7 +53,7 @@ class Decomposer:
         Decomposer.checkMainServicesExistence(vmi)
 
         # Check Similarity with all mastergraphs in repository
-        Decomposer.compareWithMasterGraphs(vmi, evalSimToMaster=evalSimToMaster)
+        Decomposer.compareWithMasterGraphs(vmi, evalDecomp=evalDecomp)
 
         # Construct Dependency lists
         MSDepList = vmi.getMainServicesDepList()
@@ -157,9 +158,6 @@ class Decomposer:
             print "\nVMI successfully decomposed and added to repository."
 
             # for evaluation purposes
-            if evalSimToMaster is not None:
-                evalSimToMaster.chosenBaseImage = chosenBaseImageOrigFileName
-
             if evalDecomp is not None:
                 if len(replacingList) > 0:
                     replacedBaseImagesString = ""
@@ -170,6 +168,7 @@ class Decomposer:
                 else:
                     baseImageTreatmentString = "New base image added as \"%s\"" % chosenBaseImage.pathToVMI.split("/")[-1]
                 evalDecomp.baseImageInfo = baseImageTreatmentString
+                evalDecomp.timeHandlerCreation = handlerCreationTime
 
     @staticmethod
     def exportPackages(vmi, manipulator, evalDecomp=None):
@@ -192,14 +191,14 @@ class Decomposer:
         with RepositoryDatabase() as repoManager:
             for pkg, pkgInfo in tmp.iteritems():
                 if repoManager.packageExists(pkg,
-                                             pkgInfo[VMIGraph.GNodeAttrVersion],
-                                             pkgInfo[VMIGraph.GNodeAttrArchitecture],
+                                             pkgInfo[StaticInfo.dictKeyVersion],
+                                             pkgInfo[StaticInfo.dictKeyArchitecture],
                                              vmi.distribution):
                     del packageDict[pkg]
-                    sumSizesReqPkgs = sumSizesReqPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+                    sumSizesReqPkgs = sumSizesReqPkgs + int(pkgInfo[StaticInfo.dictKeyInstallSize])
                 else:
-                    sumSizesReqPkgs = sumSizesReqPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
-                    sumSizesExpPkgs = sumSizesExpPkgs + int(pkgInfo[VMIGraph.GNodeAttrInstallSize])
+                    sumSizesReqPkgs = sumSizesReqPkgs + int(pkgInfo[StaticInfo.dictKeyInstallSize])
+                    sumSizesExpPkgs = sumSizesExpPkgs + int(pkgInfo[StaticInfo.dictKeyInstallSize])
 
         numReqPackages = len(packageDict)
 
@@ -211,8 +210,11 @@ class Decomposer:
               "\tPackages to be exported:\t%i" \
               % (",".join(vmi.mainServices),numAllPackages, numAllPackages - numReqPackages, numReqPackages)
 
+        exportTime = 0.0
         if numReqPackages > 0:
+            startTime = time.time()
             packageInfoDict = manipulator.exportPackages(packageDict)
+            exportTime = time.time() - startTime
 
             # Update Repository Database
             with RepositoryDatabase() as repoManager:
@@ -222,6 +224,7 @@ class Decomposer:
             evalDecomp.expPkgsNum = numReqPackages
             evalDecomp.reqPkgsSize = sumSizesReqPkgs
             evalDecomp.expPkgsSize = sumSizesExpPkgs
+            evalDecomp.timeExport = exportTime
 
     @staticmethod
     def removePackages(vmi, manipulator, guest, root):
@@ -338,11 +341,9 @@ class Decomposer:
         return (newBaseImage,list())
 
     @staticmethod
-    def compareWithMasterGraphs(vmi, evalSimToMaster=None):
+    def compareWithMasterGraphs(vmi, evalDecomp=None):
         print "Comparison to mastergraphs:"
-        if evalSimToMaster is not None:
-            evalSimToMaster.vmiFilename = vmi.vmiName
-            evalSimToMaster.vmiMainServices = vmi.mainServices
+        if evalDecomp is not None:
             startTime = time.time()
             simAndMasterList = list()
             with RepositoryDatabase() as repoManager:
@@ -355,8 +356,8 @@ class Decomposer:
                     print "\tSimilarity:\t\t%0.2f\n" % similarity
                     simAndMasterList.append((similarity,master))
             timeToCalc = time.time() - startTime
-            evalSimToMaster.timToCalc = timeToCalc
-            evalSimToMaster.setSimilarity(simAndMasterList)
+            evalDecomp.timeSimToMasterCalc = timeToCalc
+            evalDecomp.setSimilarity(simAndMasterList)
 
         else:
             with RepositoryDatabase() as repoManager:
