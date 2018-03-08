@@ -43,7 +43,7 @@ class DecompositionEvaluation(Evaluation):
                           "sumOrigStorageSize[bytes];RepoStorageSize[bytes];dbSize[bytes];"
                           "timeDecomp[s];timeHandlerCreation[s];timeExport[s];"
                           "reqPkgsNum;expPkgsNum;"
-                          "reqPkgsSize[kbytes];expPkgsSize[kbytes];"
+                          "reqPkgsSize[bytes];expPkgsSize[bytes];"
                           "baseImageInfo;"
                           "highest similarity;base with highest similarity;numPkgs in master;comparisons;time to calc sim")
         self.vmiFilename = None
@@ -127,7 +127,7 @@ class ReassemblingEvaluation(Evaluation):
                           "vmi main services;vmi size [bytes];"
                           "reassembling time [s];copy time [s];reset time [s];import time [s];handler creation time [s];"
                           "number of required packages;number of imported packages;"
-                          "required PkgsSize[kbytes];imported PkgsSize[kbytes];"
+                          "required PkgsSize[bytes];imported PkgsSize[bytes];"
                           "reassembling info")
         self.vmiFilename = None
         self.vmiMainServices = None

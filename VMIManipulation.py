@@ -300,6 +300,7 @@ class VMIManipulatorAPT(VMIManipulator):
         :return: list of packages that have been removed
         """
         self.guest.sh("apt-get purge --auto-remove -y " + " ".join(packageList))
+        self.guest.sh("apt-get clean")
 
     def exportHomeDir(self):
         if os.path.isfile(self.localUserBackupPath):
@@ -451,6 +452,9 @@ class VMIManipulatorDNF(VMIManipulator):
             # Remove temporary tarfile
             os.remove(localPkgsTarPath)
 
+            # Cleanup repository
+            self.guest.sh("dnf clean all")
+
     def removePackages(self, packageList):
         try:
             self.guest.sh("dnf -y remove " + " ".join(packageList))
@@ -459,6 +463,7 @@ class VMIManipulatorDNF(VMIManipulator):
                 sys.exit("Cannot remove main services \"%s\". Error:\n%s" % (",".join(packageList), e.message))
             else: raise RuntimeError(e.message)
         self.guest.sh("dnf autoremove")
+        self.guest.sh("dnf clean all")
 
     def exportHomeDir(self):
         if os.path.isfile(self.localUserBackupPath):

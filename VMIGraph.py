@@ -53,6 +53,7 @@ class VMIGraph:
         graph = nx.MultiDiGraph()
 
         # Obtain Package Data from guest
+        # install size is in kbytes
         pkgsInfoString = guest.sh(
             "dpkg-query --show --showformat='${Package};${Version};${Architecture};${Essential};${Installed-Size};${Depends};${Pre-Depends}\\n'")[:-1]
         # returns lines of form "curl;1.1;amd64;no;dep1, dep2,...;dep3, dep4,..."
@@ -69,14 +70,14 @@ class VMIGraph:
                                  StaticInfo.dictKeyVersion: lineData[Q.Version],
                                  StaticInfo.dictKeyArchitecture: lineData[Q.Arch],
                                  StaticInfo.dictKeyEssential: essentialPkg,
-                                 StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize],
+                                 StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize]*1000,
                                  StaticInfo.dictKeyFilePath: None
                             }))
             pkgHelperDict[lineData[Q.Name]] = {StaticInfo.dictKeyName: lineData[Q.Name],
                                                StaticInfo.dictKeyVersion: lineData[Q.Version],
                                                StaticInfo.dictKeyArchitecture: lineData[Q.Arch],
                                                StaticInfo.dictKeyEssential: essentialPkg,
-                                               StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize],
+                                               StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize]*1000,
                                                StaticInfo.dictKeyFilePath: None}
 
         # List of edge data (fromNode, toNode and attributes)
@@ -143,7 +144,7 @@ class VMIGraph:
         # Init Graph
         graph = nx.MultiDiGraph()
 
-        # tag size specifies installsize
+        # tag size specifies installsize in bytes
         # see http://ftp.rpm.org/max-rpm/ch-queryformat-tags.html
         # Obtain Package Data from guest
         pkgsInfoString = guest.sh(

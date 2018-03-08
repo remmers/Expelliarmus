@@ -765,6 +765,24 @@ class RepositoryDatabase:
             vmiDataList.append(vmiData)
         return vmiDataList
 
+    def getAllPackages(self):
+        self.cursor.execute('''
+            SELECT name,version,architecture, distribution
+            FROM PackageRepository
+            '''
+        )
+        result = self.cursor.fetchall()
+        return list((str(row[0]), str(row[1]), str(row[2]), str(row[3])) for row in result)
+
+    def getAllBaseImages(self):
+        self.cursor.execute('''
+            SELECT distribution,version,architecture,pkgManager
+            FROM baseImageRepository
+            '''
+        )
+        result = self.cursor.fetchall()
+        return list((str(row[0]), str(row[1]), str(row[2]), str(row[3])) for row in result)
+
     def getAllVmiNames(self):
         """
         :return: vmiNames ordered the way they were added

@@ -1,8 +1,6 @@
 from abc import ABCMeta, abstractmethod
 import networkx as nx
 import os
-
-from GuestFSHelper import GuestFSHelper
 from StaticInfo import StaticInfo
 from VMIGraph import VMIGraph
 

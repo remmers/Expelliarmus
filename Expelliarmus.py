@@ -17,8 +17,9 @@ from Evaluation import SimilarityToAllEvaluation, DecompositionEvaluation, \
 
 
 class Expelliarmus:
-    def __init__(self, vmiFolder):
-        StaticInfo.relPathLocalVMIFolder = vmiFolder
+    def __init__(self, vmiFolder=None):
+        if vmiFolder is not None:
+            StaticInfo.relPathLocalVMIFolder = vmiFolder
         self.checkFolderExistence()
 
     def checkFolderExistence(self):
@@ -117,6 +118,7 @@ class Expelliarmus:
             print ""
             self.checkFolderExistence()
             self.evaluateDecompositionOnce("Evaluation/" + distribution + "_evaluation_decomp_" + str(i) + ".csv")
+            raw_input("Continue?")
 
     def evaluateDecompositionNoRedundancyOnce(self, evalLogFileName):
         evalDecomp = DecompositionEvaluation(evalLogFileName)
@@ -206,21 +208,30 @@ class Expelliarmus:
             self.evaluateReassemblingOnce("Evaluation/" + distribution + "_evaluation_reassembly_" + str(i) + ".csv")
 
     def getSortedListOfAllVMIs(self):
+        """
+        .meta file has to exist for each VMI to be recognized!
+        :return:
+        """
         vmiList = list()
         for filename in os.listdir(StaticInfo.relPathLocalVMIFolder):
             if filename.endswith(".meta"):
                 filePath = StaticInfo.relPathLocalVMIFolder + "/" + filename
                 with open(filePath, "r") as metaDataFile:
                     metaData = metaDataFile.read().split(";")
-                    pathToVMI = metaData[0]
+                    vmiFileName = metaData[0]
                     pkgsSize = metaData[1]
-                    vmiList.append((pathToVMI,pkgsSize))
-        #sortedVMIs = sorted(vmiList, key=lambda vmiData: (vmiData[1],vmiData[0]))
+                    if os.path.isfile(StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName):
+                        vmiList.append((vmiFileName,pkgsSize))
+                    else:
+                        print "Warning, meta file found for VMI \"%s\" but VMI not found. Meta file removed." % vmiFileName
+                        os.remove(filePath)
         sortedVMIs = list( x[0] for x in sorted(vmiList, key=lambda vmiData: (int(vmiData[1]),vmiData[0])))
         return sortedVMIs
 
     def getSortedListOfAllVMIsAndMS(self):
         """
+        .meta file has to exist for each VMI to be recognized!
+        :return:
         :return: [(vmiFilename,[MS1,MS2])]
         """
         vmiTriples = list()
@@ -229,19 +240,27 @@ class Expelliarmus:
                 filePath = StaticInfo.relPathLocalVMIFolder + "/" + filename
                 with open(filePath, "r") as metaDataFile:
                     metaData = metaDataFile.read().replace("\n","").split(";")
-                    pathToVMI = metaData[0]
+                    vmiFileName = metaData[0]
                     pkgsSize = metaData[1]
                     mainservices = metaData[2]
-                    vmiTriples.append((pathToVMI,pkgsSize,mainservices))
+                    vmiTriples.append((vmiFileName,pkgsSize,mainservices))
         #sortedVMIs = sorted(vmiTriples, key=lambda vmiData: (vmiData[1],vmiData[0]))
         sortedVMIs = list( (x[0],x[2].split(",")) for x in sorted(vmiTriples, key=lambda vmiData: (vmiData[1],vmiData[0])))
         return sortedVMIs
 
-    def createMetaFiles(self):
+    def getVmiFilenames(self):
+        vmiFileNames = list()
+        for filename in os.listdir(StaticInfo.relPathLocalVMIFolder):
+            if filename.endswith(".qcow2"):
+                vmiFileNames.append(filename)
+        sortedVmiFileNames = sorted(vmiFileNames, key=lambda fileName: fileName.lower())
+        return sortedVmiFileNames
+
+    def createMetaFilesForAll(self):
         for filename in os.listdir("VMIs"):
             if filename.endswith(".qcow2"):
                 pathToVMI = "VMIs/" + filename
-                print pathToVMI
+                print "Creating Handler for \"%s\"" % pathToVMI
                 guest,root = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
                 print "Creating VMIDescriptor"
                 vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
@@ -276,8 +295,48 @@ class Expelliarmus:
                                    ",".join(vmi.mainServices))
                 GuestFSHelper.shutdownHandler(guest)
 
-    def resetRepo(self):
-        print "Resetting Repository."
+    def createMetaFileFor(self, VmiFilename):
+        pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + VmiFilename
+        # check if file exists and is valid format
+        if os.path.isfile(pathToVMI) and pathToVMI.endswith(".qcow2"):
+            print "Creating Handler for \"%s\"" % pathToVMI
+            guest, root = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+            print "Creating VMIDescriptor"
+            vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
+            correctMS = False
+            while not correctMS:
+                userInputMS = raw_input("\tEnter Main Services in format \"MS1,MS2,...\"\n\t")
+                vmi.mainServices = userInputMS.split(",")
+                print "\tUserinput: " + str(vmi.mainServices)
+
+                # Check if these main services exist
+                error = False
+                for pkgName in vmi.mainServices:
+                    if not vmi.checkIfNodeExists(pkgName):
+                        error = True
+                        print "\t\tMain Service \"" + pkgName + "\" does not exist"
+                        similar = vmi.getListOfNodesContaining(pkgName)
+                        if len(similar) > 0:
+                            print "\t\t\tDid you mean one of the following?\n\t" + ",".join(similar)
+                        else:
+                            print "\t\t\tNo similar packages found."
+                if not error:
+                    print "\t\tProvided Main Services exist in VMI."
+                    uInput = raw_input("\t\tCorrect, yes or no?\n\t\t")
+                    if uInput == "y" or uInput == "yes":
+                        correctMS = True
+            # add file for vmi to specify name and main services
+            metaDataFileName = pathToVMI.rsplit(".", 1)[0] + ".meta"
+            sumInstallSize = vmi.getPkgsInstallSize()
+            with open(metaDataFileName, "w+") as metaData:
+                metaData.write(VmiFilename + ";" +
+                               str(sumInstallSize) + ";" +
+                               ",".join(vmi.mainServices))
+            GuestFSHelper.shutdownHandler(guest)
+
+    def resetRepo(self, verbose=False):
+        if verbose:
+            print "Resetting Repository."
         for fileOrDir in os.listdir(StaticInfo.relPathLocalRepositoryPackages):
             if os.path.isdir(StaticInfo.relPathLocalRepositoryPackages + "/" + fileOrDir)\
                     and fileOrDir != "basic":

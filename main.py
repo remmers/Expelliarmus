@@ -1,31 +1,40 @@
-from VMIManagement import VMIManager
-from ContainerManagement import AppContainerizationUbuntu
-from ContainerManagement import RepoScannerUbuntu
+import subprocess
+import networkx as nx
+import shutil
+import time
+import sys
+
+from ContainerManagement import ContainerManager
+from Containerization import Containerization
+from Expelliarmus import Expelliarmus
+from GuestFSHelper import GuestFSHelper
+from Reassembler import Reassembler
 from RepositoryDatabase import RepositoryDatabase
-import tarfile
+from StaticInfo import StaticInfo
+from VMIDescription import VMIDescriptor
+from CLI import MainInterpreter
 
+def init(argv):
+    if len(argv) == 2:
+        pathToLibGuestFS = argv[1]
+        pathSet = True
+    else:
+        pathSet = False
+    libguestfsWorking = False
+    while not libguestfsWorking:
+        while not pathSet:
+            pathToLibGuestFS = raw_input("Please provide path to libguestfs:")
+            if len(pathToLibGuestFS)>0:
+                pathSet = True
+        try:
+            subprocess.call([pathToLibGuestFS + "/run", 'virt-customize','--version'], stdout=subprocess.PIPE)
+            libguestfsWorking = True
+        except OSError as e:
+            print "ERROR: no run.sh in \"%s\", please try again." % pathToLibGuestFS
+            pathSet = False
 
-def databaseTest():
-    with RepositoryDatabase(forceNew=False) as repoManager:
-        print repoManager.getReqFileNamesForApp("VMI_ug_fcegv.img","ubuntu","","/home/csat2890/PycharmProjects/Expelliarmus/VMIs/VMI_ug_fcegv.img","curl")
+    StaticInfo.absPathLibguestfs = pathToLibGuestFS
 
-def importTest():
-    localpackagesFilePath = "packages/ubuntu/curlPackages.tar"
-    packageFileNames = []
-    with RepositoryDatabase() as repoDB:
-        packageFileNames = repoDB.getReqFileNamesForApp("VMI_ug_fcegv.img", "ubuntu", "",
-                                                        "VMIs/VMI_ug_fcegv.img", "curl")
-    with tarfile.open(localpackagesFilePath,mode='w') as tar:
-        for pkgFileName in packageFileNames:
-            tar.add(pkgFileName)
-
-#databaseTest()
-#importTest()
-
-#contManager = AppContainerizationUbuntu("firefox", forceNew=False)
-#contManager.runApplication()
-
-#RepoScannerUbuntu.runRepoScanner()
-
-vmiManager = VMIManager.getVMIManager("VMIs/VMI_ug_fcegv.img")
-vmiManager.exportApplication("curl")
+init(sys.argv)
+main = MainInterpreter()
+main.cmdloop()
