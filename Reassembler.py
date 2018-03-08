@@ -58,7 +58,7 @@ class Reassembler:
         # Create handler
         startTime = time.time()
         print ('Creating GuestFS Handler...')
-        (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+        (guest, root) = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
         handlerCreationTime = time.time() - startTime
 
         manipulator = VMIManipulator.getVMIManipulator(pathToVMI, vmiName, guest, root)
@@ -73,7 +73,7 @@ class Reassembler:
         errorString = Reassembler.importPackages(manipulator, baseImage, mainServices, packageInfoDict, evalReassembly=evalReassembly)
         importTime = time.time() - startTime
 
-        GuestFSHelper.shutdownHandler(guest)
+        GuestFSHelper.shutdownHandle(guest)
 
         # Relabel SELinux filesystem
         if selinux:

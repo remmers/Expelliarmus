@@ -221,14 +221,14 @@ class SimilarityCalculator:
 
         # Create Descriptors/Graphs for each VMI
         print "\n=== Creating Descriptor for VMI \"%s\"" % (pathToVMI1)
-        (guest, root) = GuestFSHelper.getHandler(pathToVMI1, rootRequired=True)
+        (guest, root) = GuestFSHelper.getHandle(pathToVMI1, rootRequired=True)
         vmi1 = VMIDescriptor(pathToVMI1, "internal_vmi1", mainServices1, guest, root)
-        GuestFSHelper.shutdownHandler(guest)
+        GuestFSHelper.shutdownHandle(guest)
 
         print "\n=== Creating Descriptor for VMI \"%s\"" % (pathToVMI2)
-        (guest, root) = GuestFSHelper.getHandler(pathToVMI2, rootRequired=True)
+        (guest, root) = GuestFSHelper.getHandle(pathToVMI2, rootRequired=True)
         vmi2 = VMIDescriptor(pathToVMI2, "internal_vmi2", mainServices2, guest, root)
-        GuestFSHelper.shutdownHandler(guest)
+        GuestFSHelper.shutdownHandle(guest)
 
         # Check if Main Services exist
         SimilarityCalculator.checkMainServicesExistence(vmi1, mainServices1)
@@ -251,9 +251,9 @@ class SimilarityCalculator:
             i = i + 1
             print "Creating Descriptor for vmi \"%s\" (%i/%i)..." % (vmiFileName, i, len(vmisAndMS))
             pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + vmiFileName
-            (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+            (guest, root) = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
             vmi = VMIDescriptor(pathToVMI, vmiFileName, mainServices, guest, root)
-            GuestFSHelper.shutdownHandler(guest)
+            GuestFSHelper.shutdownHandle(guest)
             sortedVMIDescriptorList.append(vmi)
 
         similarities = defaultdict(dict)

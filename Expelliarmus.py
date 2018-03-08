@@ -263,7 +263,7 @@ class Expelliarmus:
             if filename.endswith(".qcow2"):
                 pathToVMI = "VMIs/" + filename
                 print "Creating Handler for \"%s\"" % pathToVMI
-                guest,root = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+                guest,root = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
                 print "Creating VMIDescriptor"
                 vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
                 correctMS = False
@@ -295,14 +295,14 @@ class Expelliarmus:
                     metaData.write(filename + ";" +
                                    str(sumInstallSize) + ";" +
                                    ",".join(vmi.mainServices))
-                GuestFSHelper.shutdownHandler(guest)
+                GuestFSHelper.shutdownHandle(guest)
 
     def createMetaFileFor(self, VmiFilename):
         pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + VmiFilename
         # check if file exists and is valid format
         if os.path.isfile(pathToVMI) and pathToVMI.endswith(".qcow2"):
             print "Creating Handler for \"%s\"" % pathToVMI
-            guest, root = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+            guest, root = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
             print "Creating VMIDescriptor"
             vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
             correctMS = False
@@ -334,7 +334,7 @@ class Expelliarmus:
                 metaData.write(VmiFilename + ";" +
                                str(sumInstallSize) + ";" +
                                ",".join(vmi.mainServices))
-            GuestFSHelper.shutdownHandler(guest)
+            GuestFSHelper.shutdownHandle(guest)
 
     def resetRepo(self, verbose=False):
         if verbose:

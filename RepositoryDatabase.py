@@ -1,8 +1,6 @@
 import os
 import sys
 import sqlite3
-
-import shutil
 from collections import defaultdict
 
 from StaticInfo import StaticInfo

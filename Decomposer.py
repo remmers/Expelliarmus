@@ -38,7 +38,7 @@ class Decomposer:
 
         print ('Creating GuestFS Handler...')
         startTime = time.time()
-        (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+        (guest, root) = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
         handlerCreationTime = time.time() - startTime
         print ('Creating VMI Graph...')
         vmi = VMIDescriptor(pathToVMI, vmiName, mainServices, guest, root, verbose=True)
@@ -84,7 +84,7 @@ class Decomposer:
         manipulator.removeHomeDir()
         print "\tUserfolder removed."
 
-        GuestFSHelper.shutdownHandler(guest)
+        GuestFSHelper.shutdownHandle(guest)
 
         with RepositoryDatabase() as repoManager:
             # Decide which baseImage to keep
@@ -374,7 +374,7 @@ class Decomposer:
     def onlyExportMainService(pathToVMI, mainServices):
         print "\n=== Export %s from VMI \"%s\"" % (mainServices, pathToVMI)
 
-        (guest, root) = GuestFSHelper.getHandler(pathToVMI, rootRequired=True)
+        (guest, root) = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
         vmi = VMIDescriptor(pathToVMI, "internal_export", mainServices, guest, root)
 
         print "VMI Information:\n" \
@@ -394,7 +394,7 @@ class Decomposer:
         # after this, vmiDescriptor "vmi" becomes invalid!
         manipulator = VMIManipulator.getVMIManipulator(vmi.pathToVMI, vmi.vmiName, guest, root)
         sumSizesReqPkgs, sumSizesExpPkgs = Decomposer.exportPackages(vmi, manipulator)
-        GuestFSHelper.shutdownHandler(guest)
+        GuestFSHelper.shutdownHandle(guest)
 
 
 

@@ -1,12 +1,11 @@
 import guestfs
-import subprocess
 
 class GuestFSHelper:
     @staticmethod
-    def getHandler(pathToVMI, rootRequired=False):
+    def getHandle(pathToVMI, rootRequired=False):
         """
-            Returns the guestfs handler for the vmi located at pathToVMI.
-            If rootRequired is specified, a tuple (handler,root) is returned
+            Returns the guestfs handle for the vmi located at pathToVMI.
+            If rootRequired is specified, a tuple (handle,root) is returned
         :param pathToVMI:
         :param rootRequired:
         :return:
@@ -53,6 +52,6 @@ class GuestFSHelper:
             return guest
 
     @staticmethod
-    def shutdownHandler(guest):
+    def shutdownHandle(guest):
         guest.umount_all()
         guest.shutdown()
