@@ -1,8 +1,6 @@
 VMIs/*
-BaseImages/*
-packages/*
-DockerHomeFolders/*
-VMI_UserfolderBackups/*
-.dockerignore
-tempRepository
-data
+localRepository/BaseImages/*
+localRepository/packages/*
+!localRepository/packages/basic
+localRepository/Userfolders/*
+.idea/workspace.xml

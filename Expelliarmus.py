@@ -33,6 +33,8 @@ class Expelliarmus:
             os.mkdir(StaticInfo.relPathLocalRepositoryBaseImages)
         if not os.path.isdir(StaticInfo.relPathLocalRepositoryUserFolders):
             os.mkdir(StaticInfo.relPathLocalRepositoryUserFolders)
+        if not os.path.isdir(StaticInfo.relPathLocalVMIFolder):
+            os.mkdir(StaticInfo.relPathLocalVMIFolder)
 
     def getDirSize(self, start_path):
         total_size = 0
