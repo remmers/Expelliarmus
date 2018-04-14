@@ -138,12 +138,12 @@ class SimilarityCalculator:
         #               / sumNormSizeAll
 
         if onlyOnMainServices:
-            # nodesToCheck: union(mainServices1,mainServices2)
+            # nodesToCheck: union(g1-mainServices1,g2-mainServices2)
             nodesToCheck = set(vmi1.getNodeDataFromMainServicesSubtrees().keys())\
                            .union(
                            set(vmi2.getNodeDataFromMainServicesSubtrees().keys()))
         else:
-            # nodesToCheck: union(g1,g2)
+            # nodesToCheck: union(G1,G2)
             nodesToCheck = set(g1NodesDict.keys()).union(set(g2NodesDict.keys()))
 
         numAllNodes = len(nodesToCheck)
@@ -184,7 +184,7 @@ class SimilarityCalculator:
             if (
                     # Version has to be the same
                     pkg1Data[StaticInfo.dictKeyVersion] == pkg2Data[StaticInfo.dictKeyVersion]
-                    # Architecture has to be the same, or at least on has to say all
+                    # Architecture has to be the same, or at least one has to say all
                     and (
                             pkg1Data[StaticInfo.dictKeyArchitecture] == pkg2Data[StaticInfo.dictKeyArchitecture]
                             or pkg1Data[StaticInfo.dictKeyArchitecture] == "all"

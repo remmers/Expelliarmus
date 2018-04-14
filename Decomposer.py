@@ -52,7 +52,7 @@ class Decomposer:
 
         Decomposer.checkMainServicesExistence(vmi)
 
-        # Check Similarity with all mastergraphs in repository
+        # Check Similarity with all mastergraphs in repository (only for evaluation)
         Decomposer.compareWithMasterGraphs(vmi, evalDecomp=evalDecomp)
 
         # Construct Dependency lists
