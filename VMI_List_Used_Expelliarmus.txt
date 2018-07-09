@@ -1,0 +1,76 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+List of Ubuntu VMIs used for Evaluation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%   %%%%%%%%%%	%%%%%%%%%%%%%
+ID %  %Ubuntu VMI%      %Size in GB %%
+%%%   %%%%%%%%%%	%%%%%%%%%%%%%
+1    SaltStack          2.698051584 
+2    SaltStack1         2.698051584  
+3    SaltStack2         2.698051584 
+4    SaltStack3         2.698051584 
+5    RabbitMQRedis  	2.868248576 
+6    RabbitMQRedis1  	2.868248576 
+7    RabbitMQRedis2  	2.868248576 
+8    RabbitMQRedis3  	2.868248576 
+9    Cassandra       	2.833645568 
+10   Cassandra1  	2.833645568 
+11   Cassandra2  	2.833645568 
+12   Cassandra3  	2.833645568 
+13   Tomcat  		3.136421888 
+14   Tomcat1  		3.136421887 
+15   Tomcat2  		3.136421888 
+16   TomcatMySql  	3.215654912 
+17   TomcatMySql1  	3.215654912 
+18   TomcatMySql2  	3.215654912 
+19   ApacheGUI  	8.593801216 
+20   ApacheGUI1   	8.593801216 
+21   ApacheGUI2  	8.593801215 
+22   ApachePhpGUI  	8.593801216 
+23   ApachePhpGUI1  	8.593801216 
+24   ApachePhpGUI2  	8.593801216 
+25   ApacheMySqlGUI  	8.593801216 
+26   ApacheMySqlGUI1  	8.593801216 
+27   ApacheMySqlGUI2  	8.593801215 
+28   LampStackGUI  	8.593801216 
+29   LampStackGUI1  	8.593801216 
+30   LampStackGUI2  	8.593801216 
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+List of Fedora VMIs used for Evaluation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%   %%%%%%%%%%		%%%%%%%%%%%%%
+ID %  %Fedora VMI%      	%Size in GB %%
+%%%   %%%%%%%%%%		%%%%%%%%%%%%%
+
+1     Apache  			2.070544384 
+2     Apache1  			2.070544384 
+3     ApachePhp  		2.095972352 
+4     ApachePhp1  		2.095972352 
+5     SaltStack  		2.143092736 
+6     SaltStack1  		2.143092736 
+7     SaltStack2  		2.143092736 
+8     SaltStack3  		2.143092736 
+9     Cassandra  		2.194341888 
+10    Cassandra1  		2.194341888 
+11    Tomcat  			2.223956224 
+12    Tomcat1  			2.223956224 
+13    MariaDb  			2.281897984 
+14    MariaDb1  		2.281897984 
+15    LampStack  		2.365456384 
+16    LampStack1  		2.365456384 
+17    LampStack2  		2.365456384 
+18    LampStack3  		2.365456384 
+19    RabbitMQErlang  		2.372001282 
+20    RabbitMQErlang1  		2.372001282 
+21    RabbitMQErlang2  		2.372001282 
+22    RabbitMQErlangRedis  	2.380146524 
+23    RabbitMQErlangRedis1  	2.380146524 
+24    TomcatMariaDb  		2.390818816 
+25    TomcatMariaDb1  		2.390818816 
+26    TomcatMariaDb2  		2.390818816 
+27    ApacheGUI  		8.591507456 
+28    ApacheGUI1  		8.591507456 
+29    LampStackGUI  		8.591507456 
+30    LampStackGUI1  		8.591507456 
