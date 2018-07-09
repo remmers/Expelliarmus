@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import sqlite3
 from collections import defaultdict
 
@@ -74,6 +75,13 @@ class RepositoryDatabase:
                 ''')
         self.db.commit()
         self.addPackageDict(StaticInfo.basicPackagesDictFedora, "fedora")
+
+    def initRepo(self):
+        if os.path.exists(StaticInfo.relPathLocalRepository):
+            shutil.rmtree(StaticInfo.relPathLocalRepository)
+        os.mkdir(StaticInfo.relPathLocalRepositoryPackages)
+        os.mkdir(StaticInfo.relPathLocalRepositoryBaseImages)
+        os.mkdir(StaticInfo.relPathLocalRepositoryUserFolders)
 
     def packageExists(self, name, version, arch, distribution):
         """

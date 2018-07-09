@@ -170,6 +170,7 @@ class Decomposer:
                 evalDecomp.baseImageInfo = baseImageTreatmentString
                 evalDecomp.timeHandlerCreation = handlerCreationTime
 
+    #TODO: rename (only export main services + deps)
     @staticmethod
     def exportPackages(vmi, manipulator, evalDecomp=None):
         """

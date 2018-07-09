@@ -14,6 +14,7 @@ class StaticInfo:
 
     relPathGuestRepoConfigs = "VMIRepoConfigFiles"
     relPathGuestRepoConfigUbuntu = relPathGuestRepoConfigs + "/DEB_temprepository.list"
+    relPathGuestRepoConfigFedora = relPathGuestRepoConfigs + "/RPM_temprepository.repo"
     relPathLocalVMIFolder = "VMIs"
 
     relPathDocker = "Docker"

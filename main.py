@@ -3,6 +3,7 @@ import networkx as nx
 import shutil
 import time
 import sys
+import signal
 
 from Expelliarmus import Expelliarmus
 from GuestFSHelper import GuestFSHelper
@@ -12,7 +13,20 @@ from StaticInfo import StaticInfo
 from VMIDescription import VMIDescriptor
 from CLI import MainInterpreter
 
+
+def signal_handler_forceexit(signal, frame):
+    """
+    Signal Handler for CTRL+C
+    :param signal:
+    :param frame:
+    :return:
+    """
+    print('\nProgram interrupted by CTRL+C.')
+    sys.exit(0)
+
 def init(argv):
+    signal.signal(signal.SIGINT, signal_handler_forceexit)
+
     if len(argv) == 2:
         pathToLibGuestFS = argv[1]
         pathSet = True
@@ -34,5 +48,5 @@ def init(argv):
     StaticInfo.absPathLibguestfs = pathToLibGuestFS
 
 init(sys.argv)
-main = MainInterpreter()
-main.cmdloop()
+cli = MainInterpreter()
+cli.cmdloop()

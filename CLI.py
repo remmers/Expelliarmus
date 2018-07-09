@@ -23,7 +23,11 @@ class MainInterpreter(cmd.Cmd):
 
     def __init__(self):
         cmd.Cmd.__init__(self)
+        print ""
         print StaticInfo.cliLogo
+        print "Functional Decomposition and Reassembly of Virtual Machine Images\n\n\n"
+        print "Type \"help\" to see a list of available commands."
+        print "Type \"help name\" to get a summary about the command \"name\" and how to use it.\n\n\n"
         self.exp = Expelliarmus()
         self.scanVmiFolder()
 

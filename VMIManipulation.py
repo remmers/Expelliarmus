@@ -173,7 +173,7 @@ class VMIManipulatorAPT(VMIManipulator):
         self.local_packageFolder = StaticInfo.relPathLocalRepositoryPackages + "/" + self.distribution
         self.vmi_sourcesConfigFolder = "/etc/apt/sources.list.d"
         self.vmi_tmpSourceConfigPath = self.vmi_sourcesConfigFolder + "/tempRepo.list"
-        self.localSourcesFile = StaticInfo.relPathGuestRepoConfigs + "/DEB_temprepository.list"
+        self.localSourcesFile = StaticInfo.relPathGuestRepoConfigUbuntu
         self.vmi_UserFolder = "/home"
         self.checkFolderExistence()
 
@@ -323,7 +323,7 @@ class VMIManipulatorDNF(VMIManipulator):
     def __init__(self, pathToVMI, vmiName, distribution, arch, guest):
         super(VMIManipulatorDNF, self).__init__(pathToVMI, vmiName, distribution, arch, guest)
         self.local_packageFolder    = StaticInfo.relPathLocalRepositoryPackages + "/" + self.distribution
-        self.localSourcesFile       = StaticInfo.relPathGuestRepoConfigs + "/RPM_temprepository.repo"
+        self.localSourcesFile       = StaticInfo.relPathGuestRepoConfigFedora
         self.vmi_sourcesFolderPath  = "/etc/yum.repos.d/"
         self.vmi_tmpSourceConfigPath= "/etc/yum.repos.d/tempRepo.repo"
         self.vmi_UserFolder = "/home"
