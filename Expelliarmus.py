@@ -339,6 +339,21 @@ class Expelliarmus:
     def resetRepo(self, verbose=False):
         if verbose:
             print "Resetting Repository."
+        # Remove old repository
+        if os.path.exists(StaticInfo.relPathLocalRepository):
+            shutil.rmtree(StaticInfo.relPathLocalRepository)
+        # Create Folder Structure
+        self.checkFolderExistence()
+        # import basic files
+        shutil.copytree(StaticInfo.relPathInitPackages, StaticInfo.relPathLocalRepositoryPackagesBasic)
+        # Init database
+        with RepositoryDatabase() as repo:
+            pass
+
+    # obsolete?
+    def resetRepo2(self, verbose=False):
+        if verbose:
+            print "Resetting Repository."
         for fileOrDir in os.listdir(StaticInfo.relPathLocalRepositoryPackages):
             if os.path.isdir(StaticInfo.relPathLocalRepositoryPackages + "/" + fileOrDir)\
                     and fileOrDir != "basic":

@@ -2,19 +2,25 @@
 
 class StaticInfo:
     # paths
+    # path to libguestfs build
     absPathLibguestfs = "/home/csat2890/Downloads/libguestfs-1.36.7"
 
+    # local repository folders
     relPathLocalRepository = "localRepository"
     relPathLocalRepositoryPackages = relPathLocalRepository + "/packages"
+    relPathLocalRepositoryPackagesBasic = relPathLocalRepository + "/packages/basic"
     relPathLocalRepositoryBaseImages = relPathLocalRepository + "/BaseImages"
     relPathLocalRepositoryUserFolders = relPathLocalRepository + "/UserFolders"
     relPathLocalRepositoryDatabase = relPathLocalRepository + "/db_repo_metadata.sqlite"
 
     relPathLocalRepositoryTempDepInfo = "localRepository/tempDependencies.txt"
 
-    relPathGuestRepoConfigs = "VMIRepoConfigFiles"
+    # basic files and folders that need to be present
+    relPathInitPackages = "files/basic"
+    relPathGuestRepoConfigs = "files/VMIRepoConfigFiles"
     relPathGuestRepoConfigUbuntu = relPathGuestRepoConfigs + "/DEB_temprepository.list"
     relPathGuestRepoConfigFedora = relPathGuestRepoConfigs + "/RPM_temprepository.repo"
+
     relPathLocalVMIFolder = "VMIs"
 
     relPathDocker = "Docker"
