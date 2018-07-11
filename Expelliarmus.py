@@ -258,83 +258,60 @@ class Expelliarmus:
         sortedVmiFileNames = sorted(vmiFileNames, key=lambda fileName: fileName.lower())
         return sortedVmiFileNames
 
-    def createMetaFilesForAll(self):
-        for filename in os.listdir("VMIs"):
-            if filename.endswith(".qcow2"):
-                pathToVMI = "VMIs/" + filename
-                print "Creating Handler for \"%s\"" % pathToVMI
-                guest,root = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
-                print "Creating VMIDescriptor"
-                vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
-                correctMS = False
-                while not correctMS:
-                    userInputMS = raw_input("\tEnter Main Services in format \"MS1,MS2,...\"\n\t")
-                    vmi.mainServices = userInputMS.split(",")
-                    print "\tUserinput: " + str(vmi.mainServices)
+    def createMetaFilesForAllVMIs(self):
+        vmiFilenames = self.getVmiFilenames()
+        for filename in vmiFilenames:
+            self.createMetaFileForVMI(filename)
 
-                    # Check if these main services exist
-                    error = False
-                    for pkgName in vmi.mainServices:
-                        if not vmi.checkIfNodeExists(pkgName):
-                            error = True
-                            print "\t\tMain Service \"" + pkgName + "\" does not exist"
-                            similar = vmi.getListOfNodesContaining(pkgName)
-                            if len(similar) > 0:
-                                print "\t\t\tDid you mean one of the following?\n\t" + ",".join(similar)
-                            else:
-                                print "\t\t\tNo similar packages found."
-                    if not error:
-                        print "\t\tProvided Main Services exist in VMI."
-                        uInput = raw_input("\t\tCorrect, yes or no?\n\t\t")
-                        if uInput == "y" or uInput == "yes":
-                            correctMS = True
-                # add file for vmi to specify name and main services
-                metaDataFileName = pathToVMI.rsplit(".",1)[0] + ".meta"
-                sumInstallSize = vmi.getPkgsInstallSize()
-                with open(metaDataFileName, "w+") as metaData:
-                    metaData.write(filename + ";" +
-                                   str(sumInstallSize) + ";" +
-                                   ",".join(vmi.mainServices))
-                GuestFSHelper.shutdownHandle(guest)
+    def createMetaFileForVMI(self, vmiFilename):
+        pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + vmiFilename
+        extension = vmiFilename.split(".")[-1]
+        # check if file exists
+        if not os.path.isfile(pathToVMI):
+            print "Error while analyzing VMI. File \"%s\" does not exist." % vmiFilename
+            return
+        # check if valid format
+        if not extension in StaticInfo.validVMIFormats:
+            print "Error while analyzing VMI. File extension \"%s\" is not supported." % extension
+            print "Supported extensions: " + ",".join(StaticInfo.validVMIFormats)
+            return
 
-    def createMetaFileFor(self, VmiFilename):
-        pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + VmiFilename
-        # check if file exists and is valid format
-        if os.path.isfile(pathToVMI) and pathToVMI.endswith(".qcow2"):
-            print "Creating Handler for \"%s\"" % pathToVMI
-            guest, root = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
-            print "Creating VMIDescriptor"
-            vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
-            correctMS = False
-            while not correctMS:
-                userInputMS = raw_input("\tEnter Main Services in format \"MS1,MS2,...\"\n\t")
-                vmi.mainServices = userInputMS.split(",")
-                print "\tUserinput: " + str(vmi.mainServices)
+        print "Creating Handler for \"%s\"" % pathToVMI
+        guest, root = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
+        print "Creating VMIDescriptor"
+        vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
+        GuestFSHelper.shutdownHandle(guest)
+        correctMS = False
+        while not correctMS:
+            userInputMS = raw_input("\tEnter Main Services in format \"MS1,MS2,...\"\n\t")
+            vmi.mainServices = userInputMS.split(",")
+            print "\tUserinput: " + str(vmi.mainServices)
 
-                # Check if these main services exist
-                error = False
-                for pkgName in vmi.mainServices:
-                    if not vmi.checkIfNodeExists(pkgName):
-                        error = True
-                        print "\t\tMain Service \"" + pkgName + "\" does not exist"
-                        similar = vmi.getListOfNodesContaining(pkgName)
-                        if len(similar) > 0:
-                            print "\t\t\tDid you mean one of the following?\n\t" + ",".join(similar)
-                        else:
-                            print "\t\t\tNo similar packages found."
-                if not error:
-                    print "\t\tProvided Main Services exist in VMI."
-                    uInput = raw_input("\t\tCorrect, yes or no?\n\t\t")
-                    if uInput == "y" or uInput == "yes":
-                        correctMS = True
-            # add file for vmi to specify name and main services
-            metaDataFileName = pathToVMI.rsplit(".", 1)[0] + ".meta"
-            sumInstallSize = vmi.getPkgsInstallSize()
-            with open(metaDataFileName, "w+") as metaData:
-                metaData.write(VmiFilename + ";" +
-                               str(sumInstallSize) + ";" +
-                               ",".join(vmi.mainServices))
-            GuestFSHelper.shutdownHandle(guest)
+            # Check if these main services exist
+            error = False
+            for pkgName in vmi.mainServices:
+                if not vmi.checkIfNodeExists(pkgName):
+                    error = True
+                    print "\t\tMain Service \"" + pkgName + "\" does not exist"
+                    similar = vmi.getListOfNodesContaining(pkgName)
+                    if len(similar) > 0:
+                        print "\t\t\tDid you mean one of the following?\n\t" + ",".join(similar)
+                    else:
+                        print "\t\t\tNo similar packages found."
+            if not error:
+                print "\t\tProvided Main Services exist in VMI."
+                uInput = raw_input("\t\tCorrect, yes or no?\n\t\t")
+                if uInput == "y" or uInput == "yes":
+                    correctMS = True
+
+        # add meta file for vmi
+        metaDataFileName = pathToVMI.rsplit(".", 1)[0] + ".meta"
+        sumInstallSize = vmi.getPkgsInstallSize()
+        with open(metaDataFileName, "w+") as metaData:
+            metaData.write(vmiFilename + ";" +
+                           str(sumInstallSize) + ";" +
+                           ",".join(vmi.mainServices))
+
 
     def resetRepo(self, verbose=False):
         if verbose:

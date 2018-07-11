@@ -5,6 +5,9 @@ class StaticInfo:
     # path to libguestfs build
     absPathLibguestfs = "/home/csat2890/Downloads/libguestfs-1.36.7"
 
+    # List of supported VMI formats/extensions
+    validVMIFormats = ["qcow2"]
+
     # local repository folders
     relPathLocalRepository = "localRepository"
     relPathLocalRepositoryPackages = relPathLocalRepository + "/packages"
@@ -58,11 +61,16 @@ class StaticInfo:
     }
 
     # CLI Texts
-    cliLogo =   "   ______                 _ _ _                                \n" \
-                "  |  ____|               | | (_)                               \n" \
-                "  | |__  __  ___ __   ___| | |_  __ _ _ __ _ __ ___  _   _ ___ \n" \
-                "  |  __| \ \/ / '_ \ / _ \ | | |/ _` | '__| '_ ` _ \| | | / __|\n" \
-                "  | |____ >  <| |_) |  __/ | | | (_| | |  | | | | | | |_| \__ \\\n" \
-                "  |______/_/\_\ .__/ \___|_|_|_|\__,_|_|  |_| |_| |_|\__,_|___/\n" \
-                "              | |                                              \n" \
-                "              |_|                                              \n"
+    cliLogo = "\n" \
+              "   ______                 _ _ _                                \n" \
+              "  |  ____|               | | (_)                               \n" \
+              "  | |__  __  ___ __   ___| | |_  __ _ _ __ _ __ ___  _   _ ___ \n" \
+              "  |  __| \ \/ / '_ \ / _ \ | | |/ _` | '__| '_ ` _ \| | | / __|\n" \
+              "  | |____ >  <| |_) |  __/ | | | (_| | |  | | | | | | |_| \__ \\\n" \
+              "  |______/_/\_\ .__/ \___|_|_|_|\__,_|_|  |_| |_| |_|\__,_|___/\n" \
+              "              | |                                              \n" \
+              "              |_|                                              \n"
+
+    cliIntro = "Functional Decomposition and Reassembly of Virtual Machine Images"
+    cliIntroHelp = "Type \"help\" to see a list of available commands.\n" \
+                   "Type \"help name\" to get a summary about the command \"name\" and how to use it.\n\n"

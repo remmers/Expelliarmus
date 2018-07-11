@@ -70,14 +70,14 @@ class VMIGraph:
                                  StaticInfo.dictKeyVersion: lineData[Q.Version],
                                  StaticInfo.dictKeyArchitecture: lineData[Q.Arch],
                                  StaticInfo.dictKeyEssential: essentialPkg,
-                                 StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize]*1000,
+                                 StaticInfo.dictKeyInstallSize: int(lineData[Q.InstallSize])*1000,
                                  StaticInfo.dictKeyFilePath: None
                             }))
             pkgHelperDict[lineData[Q.Name]] = {StaticInfo.dictKeyName: lineData[Q.Name],
                                                StaticInfo.dictKeyVersion: lineData[Q.Version],
                                                StaticInfo.dictKeyArchitecture: lineData[Q.Arch],
                                                StaticInfo.dictKeyEssential: essentialPkg,
-                                               StaticInfo.dictKeyInstallSize: lineData[Q.InstallSize]*1000,
+                                               StaticInfo.dictKeyInstallSize: int(lineData[Q.InstallSize])*1000,
                                                StaticInfo.dictKeyFilePath: None}
 
         # List of edge data (fromNode, toNode and attributes)

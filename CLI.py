@@ -23,13 +23,28 @@ class MainInterpreter(cmd.Cmd):
 
     def __init__(self):
         cmd.Cmd.__init__(self)
-        print ""
+        self.doc_header = "Expelliarmus: " + StaticInfo.cliIntro + "\n\n" \
+                          "The following Commands are available. Type \"help name\" to get a summary about the command \"name\" and how to use it."
+        self.ruler = " "
         print StaticInfo.cliLogo
-        print "Functional Decomposition and Reassembly of Virtual Machine Images\n\n\n"
-        print "Type \"help\" to see a list of available commands."
-        print "Type \"help name\" to get a summary about the command \"name\" and how to use it.\n\n\n"
+        print StaticInfo.cliIntro
+        print "\n\n\n\n"
+        print StaticInfo.cliIntroHelp
+
+        with RepositoryDatabase() as repo:
+            numVMIs = repo.getNumberOfVMIs()
+            numBases = repo.getNumberOfBaseImages()
+            numPkgs = repo.getNumberOfPackages()
+
+        digits = max(len(numVMIs),len(numBases),len(numPkgs))
+        print "State of Repository Storage:\n"
+        print "\tVMIs:        {0:>{width}s}".format(numVMIs, width=digits)
+        print "\tBase Images: {0:>{width}s}".format(numBases, width=digits)
+        print "\tPackages:    {0:>{width}s}".format(numPkgs, width=digits)
+        print "\nSupported VMI formats: " + ",".join(StaticInfo.validVMIFormats) + "\n\n\n\n"
         self.exp = Expelliarmus()
         self.scanVmiFolder()
+
 
     def scanVmiFolder(self):
         self._availableArgsAnalyse = self.exp.getVmiFilenames()
@@ -46,12 +61,10 @@ class MainInterpreter(cmd.Cmd):
         This process creates a .meta file required for decomposition.
 
         """
-        filename = None
-        all = False
         if line == "all":
-            self.exp.createMetaFilesForAll()
+            self.exp.createMetaFilesForAllVMIs()
         else:
-            self.exp.createMetaFileFor(line)
+            self.exp.createMetaFileForVMI(line)
 
     def complete_analyze(self, text, line, begidx, endidx):
         return [i for i in self._availableArgsAnalyse if i.startswith(text)]

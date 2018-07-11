@@ -83,6 +83,33 @@ class RepositoryDatabase:
         os.mkdir(StaticInfo.relPathLocalRepositoryBaseImages)
         os.mkdir(StaticInfo.relPathLocalRepositoryUserFolders)
 
+    def getNumberOfVMIs(self):
+        self.cursor.execute('''
+              SELECT count(*) FROM vmiRepository
+            ''',
+            ()
+        )
+        result = self.cursor.fetchall()
+        return str(result[0][0])
+
+    def getNumberOfBaseImages(self):
+        self.cursor.execute('''
+              SELECT count(*) FROM baseImageRepository
+            ''',
+            ()
+        )
+        result = self.cursor.fetchall()
+        return str(result[0][0])
+
+    def getNumberOfPackages(self):
+        self.cursor.execute('''
+              SELECT count(*) FROM PackageRepository
+            ''',
+            ()
+        )
+        result = self.cursor.fetchall()
+        return str(result[0][0])
+
     def packageExists(self, name, version, arch, distribution):
         """
         Checks if specific Package exists in database
