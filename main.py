@@ -1,4 +1,5 @@
 import subprocess
+import os
 import networkx as nx
 import shutil
 import time
@@ -46,6 +47,7 @@ def init(argv):
             pathSet = False
 
     StaticInfo.absPathLibguestfs = pathToLibGuestFS
+    StaticInfo.absPathLibguestfsRun = os.path.join(pathToLibGuestFS, "run")
 
 init(sys.argv)
 cli = MainInterpreter()

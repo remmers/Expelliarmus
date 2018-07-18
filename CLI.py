@@ -1,10 +1,24 @@
 import cmd
+import os
+import glob
+import shutil
+import readline
 from Expelliarmus import Expelliarmus
-from GuestFSHelper import GuestFSHelper
-from Reassembler import Reassembler
 from RepositoryDatabase import RepositoryDatabase
 from StaticInfo import StaticInfo
-from VMIDescription import VMIDescriptor
+
+# for correct path completion (https://stackoverflow.com/questions/16826172/filename-tab-completion-in-cmd-cmd-of-python)
+readline.set_completer_delims(' \t\n')
+
+
+def _complete_rel_path(path):
+    if not path.startswith("/"):
+        if os.path.isdir(path):
+            return glob.glob(os.path.join(path, '*'))
+        else:
+            return glob.glob(path+'*')
+    else:
+        return None
 
 class bcolors:
     HEADER = '\033[95m'
@@ -19,13 +33,10 @@ class bcolors:
 class MainInterpreter(cmd.Cmd):
     prompt = bcolors.OKBLUE + "(Expelliarmus) " + bcolors.ENDC
     _availableArgsList = ("vmis", "packages", "baseimages")
-    _availableArgsAnalyse = []
+    _availableArgsReassembly = []
 
     def __init__(self):
         cmd.Cmd.__init__(self)
-        self.doc_header = "Expelliarmus: " + StaticInfo.cliIntro + "\n\n" \
-                          "The following Commands are available. Type \"help name\" to get a summary about the command \"name\" and how to use it."
-        self.ruler = " "
         print StaticInfo.cliLogo
         print StaticInfo.cliIntro
         print "\n\n\n\n"
@@ -35,6 +46,8 @@ class MainInterpreter(cmd.Cmd):
             numVMIs = repo.getNumberOfVMIs()
             numBases = repo.getNumberOfBaseImages()
             numPkgs = repo.getNumberOfPackages()
+            self._availableArgsReassembly = repo.getAllVmiNames()
+            self._availableArgsReassembly.append("all")
 
         digits = max(len(numVMIs),len(numBases),len(numPkgs))
         print "State of Repository Storage:\n"
@@ -43,51 +56,100 @@ class MainInterpreter(cmd.Cmd):
         print "\tPackages:    {0:>{width}s}".format(numPkgs, width=digits)
         print "\nSupported VMI formats: " + ",".join(StaticInfo.validVMIFormats) + "\n\n\n\n"
         self.exp = Expelliarmus()
-        self.scanVmiFolder()
-
-
-    def scanVmiFolder(self):
-        self._availableArgsAnalyse = self.exp.getVmiFilenames()
-        self._availableArgsAnalyse.append("all")
 
     def emptyline(self):
         pass
 
-    def do_analyze(self, line):
-        """
-        Usage: analyze filename/all
-
-        Analyzes one VMI specified with filename located in folder "VMIs" or all vmis in folder "VMIs".
-        This process creates a .meta file required for decomposition.
-
-        """
-        if line == "all":
-            self.exp.createMetaFilesForAllVMIs()
+    def do_help(self, arg):
+        if arg:
+            cmd.Cmd.do_help(self, arg)
         else:
-            self.exp.createMetaFileForVMI(line)
+            print ""
+            print "Expelliarmus: " + StaticInfo.cliIntro + "\n"
+            print "The following Commands are available. Type \"help name\" to get a summary about the command \"name\" and how to use it."
+            print "Any path given by the user to specify files or folders has to be relative to the working directory of this program."
+            print ""
+            print "\tlist       - show information about VMI components currently stored"
+            print "\tinspect    - inspect VMIs and define main services"
+            print "\tdecompose  - decompose VMIs"
+            print "\treassemble - reassemble VMIs"
+            print "\tevaluate   - tool to evaluate this program"
+            print "\treset      - reset local repository of VMI components"
+            print "\texit       - exit program"
+            print ""
 
-    def complete_analyze(self, text, line, begidx, endidx):
-        return [i for i in self._availableArgsAnalyse if i.startswith(text)]
+    def do_list(self, items):
+        if items == "vmis":
+            self.exp.printVMIs()
+        elif items == "packages":
+            self.exp.printPackages()
+        elif items == "baseimages":
+            self.exp.printBaseImages()
+        else:
+            print "\"%s\" not recognized. Type \"help list\" for possible components to list" % items
+
+    def complete_list(self, text, line, begidx, endidx):
+        return [i for i in self._availableArgsList if i.startswith(text)]
+
+    def help_list(self):
+        print "\n\tUsage: list { vmis | packages | baseimages }"
+        print ""
+        print "\tShows a complete list of VMIs/Packages/Base images that are currently stored in the repository.\n"
+
+    def do_inspect(self, line):
+        if line.startswith("/"):
+            print "Error: \"%s\" is not a valid path. Please try again with a path relative to the directory of this program." % line
+        elif os.path.isfile(line):
+            self.exp.inspectVMI(line)
+        elif os.path.isdir(line):
+            self.exp.inspectVMIsInFolder(line)
+        else:
+            print "Error: \"%s\" is not a valid path." % line
+
+    def complete_inspect(self, text, line, begidx, endidx):
+        return _complete_rel_path(text)
+
+    def help_inspect(self):
+        print "\n" \
+              "\tUsage: inspect path\n\n" \
+              "\tInspect the VMI specified by \"path\" or all vmis in folder specified by \"path\".\n" \
+              "\tThis process allows the user to specify main services for VMIs." \
+              "\tCorresponding .meta files required for decomposition are created in the same folder as the inspected VMI(s).\n" \
+              "\t" + StaticInfo.cliHintPath + "\n"
 
     def do_decompose(self, line):
-        """
-        Usage: decompose [option] filename/all
+        if line.startswith("/"):
+            print "Error: \"%s\" is not a valid path. Please try again with a path relative to the directory of this program." % line
+        elif os.path.isfile(line):
+            self.exp.decomposeVMI(line)
+        elif os.path.isdir(line):
+            self.exp.decomposeVMIsInFolder(line)
+        else:
+            print "Error: \"%s\" is not a valid path." % line
 
-        Decomposes one VMI specified with filename located in folder "VMIs" or all vmis in folder "VMIs".
-        Requires a .meta file for each VMI to be decomposed. This file can be created with command "analyze".
+    def help_decompose(self):
+        print "\n\tUsage: decompose path"
+        print "\n\tDecompose the VMI specified by \"path\" or all VMIs in folder specified by \"path\"."
+        print "\tRequires a .meta file for each VMI to be decomposed. This file can be created with command \"inspect\".\n"
 
-        Options:
-            --evaluate=filename Saves evaluation data from the decomposition and saves it to filename in folder "Evaluation".
-                                If a file with that name already exists it will be overwritten!
-        """
-        evalFileName = None
-        filename = None
-        all = False
-        for arg in line.split(" "):
-            if arg.startswith("--evaluate="):
-                evalFileName = arg.split("=")[1]
+    def complete_decompose(self, text, line, begidx, endidx):
+        return _complete_rel_path(text)
 
+    def do_reassemble(self, line):
+        if line == "all":
+            self.exp.reassembleAllVMIs()
+        elif line in self._availableArgsReassembly:
+            self.exp.reassembleVMI(line)
+        else:
+            print "Error: VMI name \"%s\" not recognized." % line
 
+    def help_reassemble(self):
+        print "\n\tUsage: reassemble { name | all }"
+        print "\n\tReassemble the VMI specified by \"name\" or \"all\" VMIs stored in the repository."
+        print "\tA list of available VMIs can be obtained through \"list vmis\".\n"
+
+    def complete_reassemble(self, text, line, begidx, endidx):
+        return [i for i in self._availableArgsReassembly if i.startswith(text)]
 
 
     def do_reset(self, line):
@@ -101,61 +163,6 @@ class MainInterpreter(cmd.Cmd):
             exp = Expelliarmus()
             exp.resetRepo()
 
-    def do_list(self, items):
-        """
-        Usage: list [vmis/packages/baseimages]
-
-        list available VMIs/Packages/Base images in repository
-        """
-        if items == "vmis":
-            with RepositoryDatabase() as repoManager:
-                print "\nVMIs in repository:\n"
-                print "{:22s} {:10s} {:10s} {:10s} {:11s} {:13s}".format("Name", "Distro", "Version", "Arch", "PkgManager", "Main-Services")
-                print "-----------------------------------------------------------------------------------------------------------"
-                vmiDataList = sorted(repoManager.getDataForAllVMIs(), key=lambda vmiData: vmiData[0].lower())
-                for vmiData in vmiDataList:
-                    name = (vmiData[0][:19] + '..') if len(vmiData[0]) > 21 else vmiData[0]
-                    distribution = (vmiData[1][:7] + '..') if len(vmiData[1]) > 9 else vmiData[1]
-                    distVersion = (vmiData[2][:7] + '..') if len(vmiData[2]) > 9 else vmiData[2]
-                    arch = (vmiData[3][:7] + '..') if len(vmiData[3]) > 9 else vmiData[3]
-                    pkgManager = (vmiData[4][:8] + '..') if len(vmiData[4]) > 10 else vmiData[4]
-                    mainServices = vmiData[7]
-                    print "{:22s} {:10s} {:10s} {:10s} {:11s} {:s}".format(name, distribution, distVersion, arch, pkgManager, mainServices)
-                print "-----------------------------------------------------------------------------------------------------------"
-                print "Overall VMIs in repository: " + str(len(vmiDataList))
-        elif items == "packages":
-            with RepositoryDatabase() as repoManager:
-                print "\nPackages in repository:\n"
-                print "{:30s} {:20s} {:10s} {:10s}".format("Name", "Version", "Arch", "Distribution")
-                print "---------------------------------------------------------------------------"
-                packageDataList = sorted(repoManager.getAllPackages(), key=lambda pkgData: (pkgData[3], pkgData[0].lower()))
-                for packageData in packageDataList:
-                    name = (packageData[0][:27] + '..') if len(packageData[0]) > 29 else packageData[0]
-                    version = (packageData[1][:17] + '..') if len(packageData[1]) > 19 else packageData[1]
-                    arch = (packageData[2][:7] + '..') if len(packageData[2]) > 9 else packageData[2]
-                    distro = (packageData[3][:7] + '..') if len(packageData[3]) > 9 else packageData[3]
-                    print "{:30s} {:20s} {:10s} {:10s}".format(name, version, arch, distro)
-                print "---------------------------------------------------------------------------"
-                print "Overall Packages in repository: " + str(len(packageDataList))
-        elif items == "baseimages":
-            with RepositoryDatabase() as repoManager:
-                print "\nBase images in repository:\n"
-                print "{:12s} {:10s} {:10s} {:10s}".format("Distribution", "Version", "Arch", "PkgManager")
-                print "---------------------------------------------"
-                baseDataList = sorted(repoManager.getAllBaseImages(), key=lambda baseData: baseData[0].lower())
-                for baseData in baseDataList:
-                    distro = (baseData[0][:9] + '..') if len(baseData[0]) > 11 else baseData[0]
-                    version = (baseData[1][:7] + '..') if len(baseData[1]) > 9 else baseData[1]
-                    arch = (baseData[2][:7] + '..') if len(baseData[2]) > 9 else baseData[2]
-                    pkgManager = (baseData[3][:7] + '..') if len(baseData[3]) > 9 else baseData[3]
-                    print "{:12s} {:10s} {:10s} {:10s}".format(distro, version, arch, pkgManager)
-                print "---------------------------------------------"
-                print "Overall base images in repository: " + str(len(baseDataList))
-        else:
-            print "Item \"%s\" not recognized. Type \"help list\" for possible items to list" % items
-
-    def complete_list(self, text, line, begidx, endidx):
-        return [i for i in self._availableArgsList if i.startswith(text)]
 
     def do_exit(self, line):
         """

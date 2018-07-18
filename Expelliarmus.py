@@ -36,6 +36,308 @@ class Expelliarmus:
         if not os.path.isdir(StaticInfo.relPathLocalVMIFolder):
             os.mkdir(StaticInfo.relPathLocalVMIFolder)
 
+    def printVMIs(self):
+        with RepositoryDatabase() as repoManager:
+            print "\nVMIs in repository:\n"
+            print "{:22s} {:10s} {:10s} {:10s} {:11s} {:13s}".format("Name", "Distro", "Version", "Arch", "PkgManager",
+                                                                     "Main-Services")
+            print "-----------------------------------------------------------------------------------------------------------"
+            vmiDataList = sorted(repoManager.getDataForAllVMIs(), key=lambda vmiData: vmiData[0].lower())
+            for vmiData in vmiDataList:
+                name = (vmiData[0][:19] + '..') if len(vmiData[0]) > 21 else vmiData[0]
+                distribution = (vmiData[1][:7] + '..') if len(vmiData[1]) > 9 else vmiData[1]
+                distVersion = (vmiData[2][:7] + '..') if len(vmiData[2]) > 9 else vmiData[2]
+                arch = (vmiData[3][:7] + '..') if len(vmiData[3]) > 9 else vmiData[3]
+                pkgManager = (vmiData[4][:8] + '..') if len(vmiData[4]) > 10 else vmiData[4]
+                mainServices = vmiData[7]
+                print "{:22s} {:10s} {:10s} {:10s} {:11s} {:s}".format(name, distribution, distVersion, arch,
+                                                                       pkgManager, mainServices)
+            print "-----------------------------------------------------------------------------------------------------------"
+            print "Overall VMIs in repository: " + str(len(vmiDataList)) + "\n"
+
+    def printPackages(self):
+        with RepositoryDatabase() as repoManager:
+            print "\nPackages in repository:\n"
+            print "{:30s} {:20s} {:10s} {:10s}".format("Name", "Version", "Arch", "Distribution")
+            print "---------------------------------------------------------------------------"
+            packageDataList = sorted(repoManager.getAllPackages(), key=lambda pkgData: (pkgData[3], pkgData[0].lower()))
+            for packageData in packageDataList:
+                name = (packageData[0][:27] + '..') if len(packageData[0]) > 29 else packageData[0]
+                version = (packageData[1][:17] + '..') if len(packageData[1]) > 19 else packageData[1]
+                arch = (packageData[2][:7] + '..') if len(packageData[2]) > 9 else packageData[2]
+                distro = (packageData[3][:7] + '..') if len(packageData[3]) > 9 else packageData[3]
+                print "{:30s} {:20s} {:10s} {:10s}".format(name, version, arch, distro)
+            print "---------------------------------------------------------------------------"
+            print "Overall Packages in repository: " + str(len(packageDataList)) + "\n"
+
+    def printBaseImages(self):
+        with RepositoryDatabase() as repoManager:
+            print "\nBase images in repository:\n"
+            print "{:12s} {:10s} {:10s} {:10s}".format("Distribution", "Version", "Arch", "PkgManager")
+            print "---------------------------------------------"
+            baseDataList = sorted(repoManager.getAllBaseImages(), key=lambda baseData: baseData[0].lower())
+            for baseData in baseDataList:
+                distro = (baseData[0][:9] + '..') if len(baseData[0]) > 11 else baseData[0]
+                version = (baseData[1][:7] + '..') if len(baseData[1]) > 9 else baseData[1]
+                arch = (baseData[2][:7] + '..') if len(baseData[2]) > 9 else baseData[2]
+                pkgManager = (baseData[3][:7] + '..') if len(baseData[3]) > 9 else baseData[3]
+                print "{:12s} {:10s} {:10s} {:10s}".format(distro, version, arch, pkgManager)
+            print "---------------------------------------------"
+            print "Overall base images in repository: " + str(len(baseDataList)) + "\n"
+
+    def inspectVMIsInFolder(self, pathToDir):
+        if not os.path.isdir(pathToDir):
+            print "Error while inspecting VMIs. \"%s\" is not a directory." % pathToDir
+            return
+        vmiPaths = self.getVmiFileNamesInFolder(pathToDir)
+        numVMIs = len(vmiPaths)
+        numMetaFiles = 0
+        vmiFileNamesWithMeta = []
+        vmiPathsWithoutMeta = []
+        for pathToVMI in vmiPaths:
+            possibleMetaFile = pathToVMI.rsplit(".", 1)[0] + ".meta"
+            if os.path.isfile(possibleMetaFile):
+                numMetaFiles = numMetaFiles + 1
+                vmiFileNamesWithMeta.append(pathToVMI.split("/")[-1])
+            else:
+                vmiPathsWithoutMeta.append(pathToVMI)
+        print "Inspecting VMIs in folder %s" % pathToDir
+        print "\tFound VMIs: %i" % numVMIs
+        print "\tExisting meta files for these VMIs: %i" % numMetaFiles
+
+        # if meta files existing, ask if they should be replaced
+        replaceMetaFiles = None
+        vmiPathsToInspect = None
+        if numMetaFiles > 0:
+            userInput = raw_input("\tThere already exist meta files for the following VMIs. Replace all, yes or [no]? \n\t" + ", ".join(vmiFileNamesWithMeta) + "\n\t")
+            if userInput == "yes" or userInput == "y":
+                replaceMetaFiles = True
+                vmiPathsToInspect = vmiPaths
+            else:
+                print "\tMeta files will not be overridden."
+                replaceMetaFiles = False
+                vmiPathsToInspect = vmiPathsWithoutMeta
+        else:
+            vmiPathsToInspect = vmiPaths
+
+        if len(vmiPathsToInspect) > 0:
+            count = 1
+            for pathToVMI in vmiPathsToInspect:
+                print "VMI %i/%i" % (count,len(vmiPathsToInspect))
+                self.inspectVMI(pathToVMI,replaceMetaFiles=replaceMetaFiles)
+                count = count +1
+        else:
+            print "No VMIs to inspect."
+
+    def inspectVMI(self, pathToVMI, replaceMetaFiles=None):
+        extension = pathToVMI.split(".")[-1]
+        pathToMeta = pathToVMI.rsplit(".", 1)[0] + ".meta"
+
+        print "Inspecting VMI \"%s\"" % pathToVMI
+
+        # check if file exists
+        if not os.path.isfile(pathToVMI):
+            print "\tError while analyzing VMI. File \"%s\" does not exist." % pathToVMI
+            return
+        # check if valid format
+        if not extension in StaticInfo.validVMIFormats:
+            print "\tError while analyzing VMI. File extension \"%s\" is not supported." % extension
+            print "\tSupported extensions: " + ",".join(StaticInfo.validVMIFormats)
+            return
+
+        # check if meta file already exists
+        if os.path.isfile(pathToMeta):
+            if replaceMetaFiles is None:
+                userInput = raw_input("\tThere already exists a meta data file for the VMI \"%s\". Replace, yes or [no]? \n\t")
+                if not (userInput == "yes" or userInput == "y"):
+                    print "\tInput not recognized, Meta file will not be replaced."
+                else:
+                    print "\tExisting meta file will be replaced"
+                    self.createMetaFileForVMI(pathToVMI, pathToMeta)
+            elif replaceMetaFiles == True:
+                print "\tExisting meta file will be replaced"
+                self.createMetaFileForVMI(pathToVMI, pathToMeta)
+            else:
+                print "\tMeta file already exists for VMI."
+        else:
+            self.createMetaFileForVMI(pathToVMI,pathToMeta)
+
+    def createMetaFileForVMI(self, pathToVMI, pathToMetafile):
+        print "\tCreating Handler for \"%s\"" % pathToVMI
+        guest, root = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
+        print "\tCreating VMIDescriptor"
+        vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
+        GuestFSHelper.shutdownHandle(guest)
+        correctMS = False
+        while not correctMS:
+            userInputMS = raw_input("\tEnter Main Services in format \"MS1,MS2,...\"\n\t")
+            vmi.mainServices = userInputMS.split(",")
+            print "\tUserinput: " + str(vmi.mainServices)
+
+            # Check if these main services exist
+            error = False
+            for pkgName in vmi.mainServices:
+                if not vmi.checkIfNodeExists(pkgName):
+                    error = True
+                    print "\t\tMain Service \"" + pkgName + "\" does not exist"
+                    similar = vmi.getListOfNodesContaining(pkgName)
+                    if len(similar) > 0:
+                        print "\t\tDid you mean one of the following?\n\t\t" + ",".join(similar)
+                    else:
+                        print "\t\t\tNo similar packages found."
+            if not error:
+                print "\t\tProvided Main Services exist in VMI."
+                uInput = raw_input("\t\tCorrect, yes or no?\n\t\t")
+                if uInput == "y" or uInput == "yes":
+                    correctMS = True
+
+        # add meta file for vmi
+        sumInstallSize = vmi.getPkgsInstallSize()
+        with open(pathToMetafile, "w+") as metaData:
+            metaData.write(pathToVMI + ";" +
+                           str(sumInstallSize) + ";" +
+                           ",".join(vmi.mainServices))
+        print "\tFinished Inspection of VMI \"%s\". Meta file written to \"%s\"" % (pathToVMI, pathToMetafile)
+
+    def decomposeVMIsInFolder(self, pathToDir):
+        if not os.path.isdir(pathToDir):
+            print "Error while decomposing VMIs. \"%s\" is not a directory." % pathToDir
+            return
+        vmiPaths = self.getVmiFileNamesInFolder(pathToDir)
+        numVMIs = len(vmiPaths)
+        numVMIsWithMetaFiles = 0
+        vmiPathsWithMeta = []
+        vmiFilenamesWithoutMeta = []
+        for pathToVMI in vmiPaths:
+            possibleMetaFile = pathToVMI.rsplit(".", 1)[0] + ".meta"
+            if os.path.isfile(possibleMetaFile):
+                numVMIsWithMetaFiles = numVMIsWithMetaFiles + 1
+                vmiPathsWithMeta.append(pathToVMI)
+            else:
+                vmiFilenamesWithoutMeta.append(pathToVMI.split("/")[-1])
+        print "Decomposing VMIs in folder %s" % pathToDir
+        print "\tFound VMIs: %i" % numVMIs
+        print "\tExisting meta files for these VMIs: %i" % numVMIsWithMetaFiles
+
+        # if meta files missing, ask to continue
+        if numVMIsWithMetaFiles == 0:
+            print "Error: Meta files required for decomposition."
+            vmiPathsToDecompose = []
+        elif numVMIs != numVMIsWithMetaFiles:
+            userInput = raw_input("\tThere are missing meta files for the following VMIs. Continue with the remaining %i VMIs, yes or [no]? \n\t%s\n\t" % (numVMIsWithMetaFiles,", ".join(vmiFilenamesWithoutMeta)))
+            if userInput == "yes" or userInput == "y":
+                vmiPathsToDecompose = vmiPathsWithMeta
+            else:
+                print "\tAborting Decomposition of VMIs."
+                vmiPathsToDecompose = []
+        else:
+            vmiPathsToDecompose = vmiPaths
+
+        if len(vmiPathsToDecompose) > 0:
+            count = 1
+            for pathToVMI in vmiPathsToDecompose:
+                print "VMI %i/%i" % (count,len(vmiPathsToDecompose))
+                self.decomposeVMI(pathToVMI)
+                count = count +1
+        else:
+            pass
+
+    def decomposeVMI(self, pathToVMI):
+        vmiFileName = pathToVMI.split("/")[-1]
+        extension = pathToVMI.split(".")[-1]
+        pathToMeta = pathToVMI.rsplit(".", 1)[0] + ".meta"
+        # check if VMI exists
+        if not os.path.isfile(pathToVMI):
+            print "\tError while decomposing VMI. File \"%s\" does not exist." % pathToVMI
+            return
+        # check if valid format
+        if not extension in StaticInfo.validVMIFormats:
+            print "\tError while decomposing VMI. File extension \"%s\" is not supported." % extension
+            print "\tSupported extensions: " + ",".join(StaticInfo.validVMIFormats)
+            return
+        # check if meta file exists
+        if not os.path.isfile(pathToMeta):
+            print "\tError while decomposing VMI. Meta File \"%s\" does not exist." % pathToMeta
+            return
+
+        # obtain main services from meta data file
+        vmiMetaData = open(pathToMeta).read().split("\n")[0].split(";")
+        mainServices = vmiMetaData[2].split(",")
+
+        # decompose and clean up
+        Decomposer.decompose(pathToVMI, vmiFileName, mainServices)
+        os.remove(pathToMeta)
+
+    def reassembleAllVMIs(self):
+        vmisInFolder = self.getVmiFileNamesInFolder(StaticInfo.relPathLocalVMIFolder)
+        if len(vmisInFolder) > 0:
+            validInput = False
+            while not validInput:
+                userInput = raw_input(
+                    "There are VMIs stored in folder \"%s\". These might conflict with VMIs that are about to be reassembled.\n"
+                    "Clear This folder, yes or no?" % (StaticInfo.relPathLocalVMIFolder)
+                )
+                if userInput == "yes" or userInput == "y":
+                    shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+                    os.mkdir(StaticInfo.relPathLocalVMIFolder)
+                    validInput = True
+                elif userInput == "no" or userInput == "n":
+                    validInput = True
+                else:
+                    print "Input \"%s\" not recognized."
+
+        vmiNames = []
+        with RepositoryDatabase() as repo:
+            vmiNames = repo.getAllVmiNames()
+
+        numVMIs = len(vmiNames)
+        vmiPaths = []
+        if numVMIs > 0:
+            print "Reassembling %i VMIs\n"
+            count = 1
+            for vmiName in vmiNames:
+                print "VMI %i/%i" % (count, numVMIs)
+                vmiPaths.append(self.reassembleVMI(vmiName))
+                count = count + 1
+            print "\nVMIs reassembled: %i" % numVMIs
+            print "Reassembled VMIs stored at:%s" % "\n\t".join(vmiPaths)
+        else:
+            print "No VMIs to reassemble"
+
+    def reassembleVMI(self, vmiName):
+        return Reassembler.reassemble(vmiName)
+
+
+    def resetRepo(self, verbose=False):
+        if verbose:
+            print "Resetting Repository."
+        # Remove old repository
+        if os.path.exists(StaticInfo.relPathLocalRepository):
+            shutil.rmtree(StaticInfo.relPathLocalRepository)
+        # Create Folder Structure
+        self.checkFolderExistence()
+        # import basic files
+        shutil.copytree(StaticInfo.relPathInitPackages, StaticInfo.relPathLocalRepositoryPackagesBasic)
+        # Init database
+        with RepositoryDatabase() as repo:
+            pass
+
+    def getVmiFileNamesInFolder(self, pathToDir):
+        """
+        :param pathToDir:
+        :return: list of VMI filenames with supported file extensions in folder specified by path
+        """
+        vmiFileNames = list()
+        for filename in os.listdir(pathToDir):
+            # check if extension supported
+            extension = filename.rsplit(".", 1)[1]
+            if extension in StaticInfo.validVMIFormats:
+                vmiFileNames.append(os.path.join(pathToDir,filename))
+        sortedVmiFileNames = sorted(vmiFileNames, key=lambda fileName: fileName.lower())
+        return sortedVmiFileNames
+
+
+
     def getDirSize(self, start_path):
         total_size = 0
         for dirpath, dirnames, filenames in os.walk(start_path):
@@ -43,12 +345,6 @@ class Expelliarmus:
                 fp = os.path.join(dirpath, f)
                 total_size += os.path.getsize(fp)
         return total_size
-
-    def printVMIs(self):
-        with RepositoryDatabase() as repoManager:
-            vmiDataList = repoManager.getDataForAllVMIs()
-            for vmiData in vmiDataList:
-                print vmiData
 
     def evaluateSimBetweenAll(self, distribution, onlyOnMainServices):
         if onlyOnMainServices:
@@ -249,94 +545,3 @@ class Expelliarmus:
         #sortedVMIs = sorted(vmiTriples, key=lambda vmiData: (vmiData[1],vmiData[0]))
         sortedVMIs = list( (x[0],x[2].split(",")) for x in sorted(vmiTriples, key=lambda vmiData: (vmiData[1],vmiData[0])))
         return sortedVMIs
-
-    def getVmiFilenames(self):
-        vmiFileNames = list()
-        for filename in os.listdir(StaticInfo.relPathLocalVMIFolder):
-            if filename.endswith(".qcow2"):
-                vmiFileNames.append(filename)
-        sortedVmiFileNames = sorted(vmiFileNames, key=lambda fileName: fileName.lower())
-        return sortedVmiFileNames
-
-    def createMetaFilesForAllVMIs(self):
-        vmiFilenames = self.getVmiFilenames()
-        for filename in vmiFilenames:
-            self.createMetaFileForVMI(filename)
-
-    def createMetaFileForVMI(self, vmiFilename):
-        pathToVMI = StaticInfo.relPathLocalVMIFolder + "/" + vmiFilename
-        extension = vmiFilename.split(".")[-1]
-        # check if file exists
-        if not os.path.isfile(pathToVMI):
-            print "Error while analyzing VMI. File \"%s\" does not exist." % vmiFilename
-            return
-        # check if valid format
-        if not extension in StaticInfo.validVMIFormats:
-            print "Error while analyzing VMI. File extension \"%s\" is not supported." % extension
-            print "Supported extensions: " + ",".join(StaticInfo.validVMIFormats)
-            return
-
-        print "Creating Handler for \"%s\"" % pathToVMI
-        guest, root = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
-        print "Creating VMIDescriptor"
-        vmi = VMIDescriptor(pathToVMI, "test", [], guest, root)
-        GuestFSHelper.shutdownHandle(guest)
-        correctMS = False
-        while not correctMS:
-            userInputMS = raw_input("\tEnter Main Services in format \"MS1,MS2,...\"\n\t")
-            vmi.mainServices = userInputMS.split(",")
-            print "\tUserinput: " + str(vmi.mainServices)
-
-            # Check if these main services exist
-            error = False
-            for pkgName in vmi.mainServices:
-                if not vmi.checkIfNodeExists(pkgName):
-                    error = True
-                    print "\t\tMain Service \"" + pkgName + "\" does not exist"
-                    similar = vmi.getListOfNodesContaining(pkgName)
-                    if len(similar) > 0:
-                        print "\t\t\tDid you mean one of the following?\n\t" + ",".join(similar)
-                    else:
-                        print "\t\t\tNo similar packages found."
-            if not error:
-                print "\t\tProvided Main Services exist in VMI."
-                uInput = raw_input("\t\tCorrect, yes or no?\n\t\t")
-                if uInput == "y" or uInput == "yes":
-                    correctMS = True
-
-        # add meta file for vmi
-        metaDataFileName = pathToVMI.rsplit(".", 1)[0] + ".meta"
-        sumInstallSize = vmi.getPkgsInstallSize()
-        with open(metaDataFileName, "w+") as metaData:
-            metaData.write(vmiFilename + ";" +
-                           str(sumInstallSize) + ";" +
-                           ",".join(vmi.mainServices))
-
-
-    def resetRepo(self, verbose=False):
-        if verbose:
-            print "Resetting Repository."
-        # Remove old repository
-        if os.path.exists(StaticInfo.relPathLocalRepository):
-            shutil.rmtree(StaticInfo.relPathLocalRepository)
-        # Create Folder Structure
-        self.checkFolderExistence()
-        # import basic files
-        shutil.copytree(StaticInfo.relPathInitPackages, StaticInfo.relPathLocalRepositoryPackagesBasic)
-        # Init database
-        with RepositoryDatabase() as repo:
-            pass
-
-    # obsolete?
-    def resetRepo2(self, verbose=False):
-        if verbose:
-            print "Resetting Repository."
-        for fileOrDir in os.listdir(StaticInfo.relPathLocalRepositoryPackages):
-            if os.path.isdir(StaticInfo.relPathLocalRepositoryPackages + "/" + fileOrDir)\
-                    and fileOrDir != "basic":
-                shutil.rmtree(StaticInfo.relPathLocalRepositoryPackages + "/" + fileOrDir)
-        shutil.rmtree(StaticInfo.relPathLocalRepositoryUserFolders)
-        shutil.rmtree(StaticInfo.relPathLocalRepositoryBaseImages)
-        if os.path.isfile(StaticInfo.relPathLocalRepositoryDatabase):
-            os.remove(StaticInfo.relPathLocalRepositoryDatabase)
-        self.checkFolderExistence()

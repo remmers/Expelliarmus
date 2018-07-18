@@ -137,12 +137,12 @@ class VMIManipulator:
 
         absPathToVMI = os.path.dirname(os.path.realpath(__file__)) + '/' + pathToVMI
         subprocess.call(
-            ['/home/csat2890/Downloads/libguestfs-1.36.7/run', 'virt-sysprep',
+            [StaticInfo.absPathLibguestfsRun, 'virt-sysprep',
              '--add', absPathToVMI,
              '--enable','customize'],
             stdout=subprocess.PIPE)
         subprocess.call(
-            ['/home/csat2890/Downloads/libguestfs-1.36.7/run', 'virt-sysprep',
+            [StaticInfo.absPathLibguestfsRun, 'virt-sysprep',
                 '--add', absPathToVMI,
                 '--operations',
                 'customize,abrt-data,backup-files,bash-history,blkid-tab,crash-data,cron-spool,dhcp-client-state,dhcp-server-state,dovecot-data,logfiles,lvm-uuids,machine-id,mail-spool,net-hostname,net-hwaddr,pacct-log,package-manager-cache,pam-data,passwd-backups,puppet-data-log,rh-subscription-manager,rhn-systemid,rpm-db,samba-db-log,smolt-uuid,ssh-hostkeys,ssh-userdir,sssd-db-log,tmp-files,udev-persistent-net,utmp,yum-uuid'],

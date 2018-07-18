@@ -4,6 +4,7 @@ class StaticInfo:
     # paths
     # path to libguestfs build
     absPathLibguestfs = "/home/csat2890/Downloads/libguestfs-1.36.7"
+    absPathLibguestfsRun = None
 
     # List of supported VMI formats/extensions
     validVMIFormats = ["qcow2"]
@@ -73,4 +74,6 @@ class StaticInfo:
 
     cliIntro = "Functional Decomposition and Reassembly of Virtual Machine Images"
     cliIntroHelp = "Type \"help\" to see a list of available commands.\n" \
-                   "Type \"help name\" to get a summary about the command \"name\" and how to use it.\n\n"
+                   "Type \"help name\" to get a summary about the command \"name\" and how to use it.\n" \
+                   "Any path given by the user to specify files or folders has to be relative to the working directory of this program.\n\n"
+    cliHintPath = "The specified path has to be relative to the working directory of this program."

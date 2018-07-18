@@ -57,7 +57,7 @@ class Reassembler:
 
         # Create handler
         startTime = time.time()
-        print ('Creating GuestFS Handler...')
+        print ('Creating GuestFS Handle...')
         (guest, root) = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
         handlerCreationTime = time.time() - startTime
 
