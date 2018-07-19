@@ -307,6 +307,24 @@ class Expelliarmus:
     def reassembleVMI(self, vmiName):
         return Reassembler.reassemble(vmiName)
 
+    def evaluateSimBetweenAll(self, distribution, onlyOnMainServices):
+        if onlyOnMainServices:
+            evalLogPath = "Evaluation/" + distribution + "_evaluation_simToAll_MS.csv"
+        else:
+            evalLogPath = "Evaluation/" + distribution + "_evaluation_simToAll_General.csv"
+
+        sortedVmiFileNames = self.getSortedListOfAllVMIs()
+        sortedVmiFileNamesNoSnapshots = [ x for x in sortedVmiFileNames if "Snapshot" not in x]
+        sortedVmiFileNamesAndMS = self.getSortedListOfAllVMIsAndMS()
+        sortedVmiFileNamesAndMSNoSnapshots = [ (x,y) for (x,y) in sortedVmiFileNamesAndMS if "Snapshot" not in x]
+
+        evalSimToMaster = SimilarityToAllEvaluation(evalLogPath, sortedVmiFileNamesNoSnapshots)
+
+        evalSimToMaster.similarities = SimilarityCalculator.computeSimilarityManyToMany(sortedVmiFileNamesAndMSNoSnapshots, onlyOnMainServices=onlyOnMainServices)
+
+        evalSimToMaster.saveEvaluation()
+
+
 
     def resetRepo(self, verbose=False):
         if verbose:
@@ -346,22 +364,6 @@ class Expelliarmus:
                 total_size += os.path.getsize(fp)
         return total_size
 
-    def evaluateSimBetweenAll(self, distribution, onlyOnMainServices):
-        if onlyOnMainServices:
-            evalLogPath = "Evaluation/" + distribution + "_evaluation_simToAll_MS.csv"
-        else:
-            evalLogPath = "Evaluation/" + distribution + "_evaluation_simToAll_General.csv"
-
-        sortedVmiFileNames = self.getSortedListOfAllVMIs()
-        sortedVmiFileNamesNoSnapshots = [ x for x in sortedVmiFileNames if "Snapshot" not in x]
-        sortedVmiFileNamesAndMS = self.getSortedListOfAllVMIsAndMS()
-        sortedVmiFileNamesAndMSNoSnapshots = [ (x,y) for (x,y) in sortedVmiFileNamesAndMS if "Snapshot" not in x]
-
-        evalSimToMaster = SimilarityToAllEvaluation(evalLogPath, sortedVmiFileNamesNoSnapshots)
-
-        evalSimToMaster.similarities = SimilarityCalculator.computeSimilarityManyToMany(sortedVmiFileNamesAndMSNoSnapshots, onlyOnMainServices=onlyOnMainServices)
-
-        evalSimToMaster.saveEvaluation()
 
     def evaluateDecompositionOnce(self, evalLogFileName):
         evalDecomp = DecompositionEvaluation(evalLogFileName)

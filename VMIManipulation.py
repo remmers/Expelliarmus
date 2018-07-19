@@ -101,7 +101,6 @@ class VMIManipulator:
             bash-history:       bash-history
             blkid-tab:          cached information from blkid? #TODO
             crash-data:         automatically generated kdump kernel crash data
-            cron-spool:         user's at-jobs and cron-jobs (scheduled jobs)
             dhcp-client-state:  DHCP client leases
             dhcp-server-state:  DHCP server leases
             dovecot-data:       Dovecot (mail server) data
@@ -112,7 +111,6 @@ class VMIManipulator:
             net-hostname:       HOSTNAME and DHCP_HOSTNAME in network interface configuration
             net-hwaddr:         HWADDR (hard-coded MAC address) configuration
             pacct-log:          process accounting log files
-            package-manager-cache: package manager cache
             pam-data:           pam data, see http://manpages.ubuntu.com/manpages/trusty/man5/pam.d.5.html
             passwd-backups:     /etc/passwd- and similar backup files
             puppet-data-log:    data and log files of puppet
@@ -130,6 +128,10 @@ class VMIManipulator:
             utmp:               utmp file
             yum-uuid:           yum UUID
             customize           to generate new random seed
+
+            REMOVED because of unidenfiable problems with virt-sysprep
+            package-manager-cache: package manager cache
+            cron-spool:         user's at-jobs and cron-jobs (scheduled jobs)
         :param pathToVMI:
         :return:
         """
@@ -145,7 +147,7 @@ class VMIManipulator:
             [StaticInfo.absPathLibguestfsRun, 'virt-sysprep',
                 '--add', absPathToVMI,
                 '--operations',
-                'customize,abrt-data,backup-files,bash-history,blkid-tab,crash-data,cron-spool,dhcp-client-state,dhcp-server-state,dovecot-data,logfiles,lvm-uuids,machine-id,mail-spool,net-hostname,net-hwaddr,pacct-log,package-manager-cache,pam-data,passwd-backups,puppet-data-log,rh-subscription-manager,rhn-systemid,rpm-db,samba-db-log,smolt-uuid,ssh-hostkeys,ssh-userdir,sssd-db-log,tmp-files,udev-persistent-net,utmp,yum-uuid'],
+                'customize,abrt-data,backup-files,bash-history,blkid-tab,crash-data,dhcp-client-state,dhcp-server-state,dovecot-data,logfiles,lvm-uuids,machine-id,mail-spool,net-hostname,net-hwaddr,pacct-log,pam-data,passwd-backups,puppet-data-log,rh-subscription-manager,rhn-systemid,rpm-db,samba-db-log,smolt-uuid,ssh-hostkeys,ssh-userdir,sssd-db-log,tmp-files,udev-persistent-net,utmp,yum-uuid'],
             stdout=subprocess.PIPE)
 
 
