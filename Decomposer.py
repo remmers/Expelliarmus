@@ -27,7 +27,7 @@ class Decomposer:
 
     @staticmethod
     def decompose(pathToVMI, vmiName, mainServices, evalDecomp=None):
-        print "\n=== Decompose VMI \"%s\"\nFilename: \"%s\"" % (vmiName, pathToVMI)
+        print "\n=== Decompose VMI \"%s\"\nPath: \"%s\"" % (vmiName, pathToVMI)
 
         if not os.path.isfile(pathToVMI):
             sys.exit("ERROR: Cannot decompose VMI \"%s\". File \"%s\" does not exist!" % (vmiName, pathToVMI))

@@ -89,7 +89,7 @@ class Expelliarmus:
         if not os.path.isdir(pathToDir):
             print "Error while inspecting VMIs. \"%s\" is not a directory." % pathToDir
             return
-        vmiPaths = self.getVmiFileNamesInFolder(pathToDir)
+        vmiPaths = self.getVmiPaths(pathToDir)
         numVMIs = len(vmiPaths)
         numMetaFiles = 0
         vmiFileNamesWithMeta = []
@@ -194,7 +194,8 @@ class Expelliarmus:
         # add meta file for vmi
         sumInstallSize = vmi.getPkgsInstallSize()
         with open(pathToMetafile, "w+") as metaData:
-            metaData.write(pathToVMI + ";" +
+            vmiFileName = pathToVMI.rsplit("/",1)[-1]
+            metaData.write(vmiFileName + ";" +
                            str(sumInstallSize) + ";" +
                            ",".join(vmi.mainServices))
         print "\tFinished Inspection of VMI \"%s\". Meta file written to \"%s\"" % (pathToVMI, pathToMetafile)
@@ -203,7 +204,7 @@ class Expelliarmus:
         if not os.path.isdir(pathToDir):
             print "Error while decomposing VMIs. \"%s\" is not a directory." % pathToDir
             return
-        vmiPaths = self.getVmiFileNamesInFolder(pathToDir)
+        vmiPaths = self.getVmiPaths(pathToDir)
         numVMIs = len(vmiPaths)
         numVMIsWithMetaFiles = 0
         vmiPathsWithMeta = []
@@ -269,7 +270,7 @@ class Expelliarmus:
         os.remove(pathToMeta)
 
     def reassembleAllVMIs(self):
-        vmisInFolder = self.getVmiFileNamesInFolder(StaticInfo.relPathLocalVMIFolder)
+        vmisInFolder = self.getVmiPaths(StaticInfo.relPathLocalVMIFolder)
         if len(vmisInFolder) > 0:
             validInput = False
             while not validInput:
@@ -307,24 +308,160 @@ class Expelliarmus:
     def reassembleVMI(self, vmiName):
         return Reassembler.reassemble(vmiName)
 
-    def evaluateSimBetweenAll(self, distribution, onlyOnMainServices):
-        if onlyOnMainServices:
-            evalLogPath = "Evaluation/" + distribution + "_evaluation_simToAll_MS.csv"
-        else:
-            evalLogPath = "Evaluation/" + distribution + "_evaluation_simToAll_General.csv"
-
-        sortedVmiFileNames = self.getSortedListOfAllVMIs()
-        sortedVmiFileNamesNoSnapshots = [ x for x in sortedVmiFileNames if "Snapshot" not in x]
-        sortedVmiFileNamesAndMS = self.getSortedListOfAllVMIsAndMS()
-        sortedVmiFileNamesAndMSNoSnapshots = [ (x,y) for (x,y) in sortedVmiFileNamesAndMS if "Snapshot" not in x]
-
-        evalSimToMaster = SimilarityToAllEvaluation(evalLogPath, sortedVmiFileNamesNoSnapshots)
-
-        evalSimToMaster.similarities = SimilarityCalculator.computeSimilarityManyToMany(sortedVmiFileNamesAndMSNoSnapshots, onlyOnMainServices=onlyOnMainServices)
-
+    def evaluateSimBetweenAll(self, pathToDir):
+        evalLogPath = os.path.join (StaticInfo.relPathLocalEvaluation,"evaluation_simToAll_MS.csv")
+        sortedVmiData = self.getSortedVmiData(pathToDir)
+        sortedVmiFileNames = list (x[1] for x in sortedVmiData)
+        evalSimToMaster = SimilarityToAllEvaluation(evalLogPath, sortedVmiFileNames)
+        evalSimToMaster.similarities = SimilarityCalculator.computeSimilarityManyToMany(sortedVmiData, onlyOnMainServices=True)
         evalSimToMaster.saveEvaluation()
 
+    def evaluateDecomposition(self, pathToSource, repetitions, resetBeforeEachDecomposition):
+        for i in range(1, repetitions + 1):
+            print "============================================"
+            print "          Evaluating decomposition          "
 
+            if not resetBeforeEachDecomposition:
+                print "       exploiting semantic redundancy       "
+            else:
+                print "     not exploiting semantic redundancy     "
+
+            print "              Iteration %i/%i" % (i, repetitions)
+            print "============================================\n"
+
+            self.resetRepo()
+            print "Copy VMIs from \"%s\" to \"%s\":\n" % (pathToSource, StaticInfo.relPathLocalVMIFolder)
+            if os.path.isdir(StaticInfo.relPathLocalVMIFolder):
+                shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+
+            origSize = self.getDirSize(pathToSource)
+            t = Thread(target=shutil.copytree, args=[pathToSource, StaticInfo.relPathLocalVMIFolder])
+            t.setDaemon(True)
+            t.start()
+            while t.isAlive():
+                time.sleep(2)
+                sys.stdout.write("\r\tProgress: %.1f%%" % (float(self.getDirSize(StaticInfo.relPathLocalVMIFolder)) / origSize * 100))
+                sys.stdout.flush()
+            sys.stdout.write("\r\tProgress: 100.0%")
+            sys.stdout.flush()
+            print ""
+            self.checkFolderExistence()
+
+            if not resetBeforeEachDecomposition:
+                evalLogFileName = StaticInfo.relPathLocalEvaluation + "/decomposition_" + str(i) + ".csv"
+            else:
+                evalLogFileName = StaticInfo.relPathLocalEvaluation + "/decomposition_noRedundancy" + str(i) + ".csv"
+            self.evaluateDecompositionOnce(StaticInfo.relPathLocalVMIFolder, evalLogFileName, resetBeforeEachDecomposition)
+        print "\n\nEvaluation completed, results saved in \"%s\"." % StaticInfo.relPathLocalEvaluation
+
+    def evaluateDecompositionOnce(self, pathToDir, evalLogFileName, resetBeforeEachDecomposition):
+        evalDecomp = DecompositionEvaluation(evalLogFileName)
+
+        sortedVmiData = self.getSortedVmiData(pathToDir)
+        i = 0
+        for (pathToVMI, vmiFileName, mainServices) in sortedVmiData:
+            if resetBeforeEachDecomposition:
+                self.resetRepo()
+            i = i + 1
+            print ""
+            print "        VMI %i/%i" % (i, len(sortedVmiData))
+            print "============================="
+            evalDecomp.vmiFilename = vmiFileName
+            evalDecomp.vmiMainServices = mainServices
+            evalDecomp.addVmiOrigSize(os.path.getsize(pathToVMI))
+
+            startTime = time.time()
+            Decomposer.decompose(pathToVMI, vmiFileName, mainServices, evalDecomp=evalDecomp)
+            decompTime = time.time() - startTime
+
+            repoStorageSize = self.getDirSize(StaticInfo.relPathLocalRepository)
+
+            evalDecomp.sumRepoStorageSize = repoStorageSize
+            evalDecomp.dbSize = os.path.getsize(StaticInfo.relPathLocalRepositoryDatabase)
+            evalDecomp.timeDecompAll = decompTime
+            evalDecomp.newLine()
+
+            # remove meta data file
+            pathToMetaData = pathToVMI.rsplit(".", 1)[0] + ".meta"
+            os.remove(pathToMetaData)
+        evalDecomp.saveEvaluation()
+
+    def evaluateReassembly(self, repetitions):
+        for i in range(1, repetitions + 1):
+            print "============================================"
+            print "           Evaluating reassembly            "
+            print "              Iteration %i/%i" % (i, repetitions)
+            print "============================================\n"
+            if os.path.isdir(StaticInfo.relPathLocalVMIFolder):
+                shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+            os.mkdir(StaticInfo.relPathLocalVMIFolder)
+            self.evaluateReassemblyOnce(StaticInfo.relPathLocalEvaluation + "/reassembly_" + str(i) + ".csv")
+
+    def evaluateReassemblyOnce(self, evalLogFileName):
+        evalReassembly = ReassemblingEvaluation(evalLogFileName)
+        with RepositoryDatabase() as repoManager:
+            vmiNameList = repoManager.getAllVmiNames()
+
+        # filter out snapshots
+        # vmiNameList = [x for x in vmiNameList if "Snapshot" not in x]
+
+        i = 0
+        for vmiName in vmiNameList:
+            i = i + 1
+            print ""
+            print "        VMI %i/%i" % (i, len(vmiNameList))
+            print "============================="
+            shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+            os.mkdir(StaticInfo.relPathLocalVMIFolder)
+            startTime = time.time()
+            pathToNewVMI = Reassembler.reassemble(vmiName, evalReassembly=evalReassembly)
+            reassemblingTime = time.time() - startTime
+
+            evalReassembly.reassemblingTime = reassemblingTime
+            evalReassembly.vmiSize = os.path.getsize(pathToNewVMI)
+            evalReassembly.newLine()
+        evalReassembly.saveEvaluation()
+
+
+
+    def verifySourceFolder(self, pathToDir):
+        if not os.path.isdir(pathToDir):
+            print "Error: \"%s\" is not a directory." % pathToDir
+            return False
+        print "Verifying source folder \"%s\":" % pathToDir
+        vmiPaths = self.getVmiPaths(pathToDir)
+        metaPaths = []
+        numVMIs = len(vmiPaths)
+        numVMIsWithMetaFiles = 0
+        vmiFilenamesWithoutMeta = []
+
+        # Check if meta file exists for every valid VMI
+        for pathToVMI in vmiPaths:
+            possibleMetaFile = pathToVMI.rsplit(".", 1)[0] + ".meta"
+            if os.path.isfile(possibleMetaFile):
+                numVMIsWithMetaFiles = numVMIsWithMetaFiles + 1
+                metaPaths.append(possibleMetaFile)
+            else:
+                vmiFilenamesWithoutMeta.append(pathToVMI.split("/")[-1])
+        if numVMIs != numVMIsWithMetaFiles:
+            print "\tThe following VMIs are missing meta files:\n\t" + ",".join(vmiFilenamesWithoutMeta)
+            return False
+
+        # Check if only valid files in folder
+        extraFiles = []
+        for filename in os.listdir(pathToDir):
+            # check if extension supported
+            pathToFile = os.path.join(pathToDir,filename)
+            if (pathToFile not in vmiPaths) and (pathToFile not in metaPaths):
+                extraFiles.append(pathToFile.rsplit("/",1)[1])
+        if len(extraFiles) > 0:
+            print "\tThe following files are either meta files not corresponding to any VMI or other files not supported by this program."
+            print "\tPlease remove these manually."
+            print "\t\t" + ",".join(extraFiles)
+            return False
+
+        print "\tVerification finished successfully."
+        return True
 
     def resetRepo(self, verbose=False):
         if verbose:
@@ -340,21 +477,45 @@ class Expelliarmus:
         with RepositoryDatabase() as repo:
             pass
 
-    def getVmiFileNamesInFolder(self, pathToDir):
+    def getVmiPaths(self, pathToDir):
         """
         :param pathToDir:
-        :return: list of VMI filenames with supported file extensions in folder specified by path
+        :return: list of VMI paths with supported file extensions in folder specified by path (e.g. [pathToDir/vmiName.qcow2]
         """
-        vmiFileNames = list()
+        vmiPaths = list()
         for filename in os.listdir(pathToDir):
             # check if extension supported
             extension = filename.rsplit(".", 1)[1]
             if extension in StaticInfo.validVMIFormats:
-                vmiFileNames.append(os.path.join(pathToDir,filename))
-        sortedVmiFileNames = sorted(vmiFileNames, key=lambda fileName: fileName.lower())
-        return sortedVmiFileNames
+                vmiPaths.append(os.path.join(pathToDir,filename))
+        sortedVmiPaths = sorted(vmiPaths, key=lambda fileName: fileName.lower())
+        return sortedVmiPaths
 
+    def getSortedVmiData(self, pathToDir):
+        """
+            .meta file has to exist for each VMI to be recognized! run verifySourceFolder before!
+            :return:
+            :return: [(pathToVMI, vmiFilename, [MS1,MS2])]
+        """
+        vmiPaths = self.getVmiPaths(pathToDir)
+        # list of vmi data
+        # [(vmiPath, vmiFileName, pkgSize, [main services])]
+        vmiData = list()
+        for pathToVMI in vmiPaths:
+            pathToMetaData = pathToVMI.rsplit(".",1)[0] + ".meta"
+            with open(pathToMetaData, "r") as metaDataFile:
+                metaData = metaDataFile.read().replace("\n", "").split(";")
+                vmiFileName = metaData[0]
+                pkgsSize = metaData[1]
+                mainservices = metaData[2]
+                vmiData.append((pathToVMI,vmiFileName, pkgsSize, mainservices))
 
+        # sort list by 1. pkgSize 2. filename
+        # and remove pkgSize
+        # [(vmiPath, vmiFileName, [main services])]
+        sortedVmiData = list(
+            (x[0], x[1], x[3].split(",")) for x in sorted(vmiData, key=lambda vmiData: (vmiData[2], vmiData[1])))
+        return sortedVmiData
 
     def getDirSize(self, start_path):
         total_size = 0
@@ -365,7 +526,9 @@ class Expelliarmus:
         return total_size
 
 
-    def evaluateDecompositionOnce(self, evalLogFileName):
+
+
+    def evaluateDecompositionOnceOLD(self, evalLogFileName):
         evalDecomp = DecompositionEvaluation(evalLogFileName)
 
         sortedVmiFileNames = self.getSortedListOfAllVMIs()
@@ -400,7 +563,7 @@ class Expelliarmus:
             os.remove(vmiMetaDataPath)
         evalDecomp.saveEvaluation()
 
-    def evaluateDecomposition(self, distribution, numberOfEvaluations):
+    def evaluateDecompositionOLD(self, distribution, numberOfEvaluations):
         vmiBackupFolder = "VMI_Backups/" + distribution
 
         for i in range(1,numberOfEvaluations+1):
@@ -417,7 +580,7 @@ class Expelliarmus:
                 sys.stdout.flush()
             print ""
             self.checkFolderExistence()
-            self.evaluateDecompositionOnce("Evaluation/" + distribution + "_evaluation_decomp_" + str(i) + ".csv")
+            self.evaluateDecompositionOnceOLD("Evaluation/" + distribution + "_evaluation_decomp_" + str(i) + ".csv")
             raw_input("Continue?")
 
     def evaluateDecompositionNoRedundancyOnce(self, evalLogFileName):
@@ -477,7 +640,7 @@ class Expelliarmus:
             self.checkFolderExistence()
             self.evaluateDecompositionNoRedundancyOnce("Evaluation/" + distribution + "_evaluation_decomp_noRedundancy_" + str(i) + ".csv")
 
-    def evaluateReassemblingOnce(self, evalLogFileName):
+    def evaluateReassemblingOnceOLD(self, evalLogFileName):
         evalReassembly = ReassemblingEvaluation(evalLogFileName)
         with RepositoryDatabase() as repoManager:
             vmiNameList = repoManager.getAllVmiNames()
@@ -501,7 +664,7 @@ class Expelliarmus:
             evalReassembly.newLine()
         evalReassembly.saveEvaluation()
 
-    def evaluateReassembling(self, distribution, numberOfEvaluations):
+    def evaluateReassemblingOLD(self, distribution, numberOfEvaluations):
         for i in range(1, numberOfEvaluations + 1):
             shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
             os.mkdir(StaticInfo.relPathLocalVMIFolder)

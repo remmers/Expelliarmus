@@ -20,6 +20,9 @@ def _complete_rel_path(path):
     else:
         return None
 
+def _complete_arg_list(text, arglist):
+    return [i for i in arglist if i.startswith(text)]
+
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -34,6 +37,8 @@ class MainInterpreter(cmd.Cmd):
     prompt = bcolors.OKBLUE + "(Expelliarmus) " + bcolors.ENDC
     _availableArgsList = ("vmis", "packages", "baseimages")
     _availableArgsReassembly = []
+    _availableArgsEvaluateFunctions = ["decomposition1", "decomposition2", "reassembly", "similarity"]
+    _availableArgsEvaluateOptions = ["--repetitions=", "--path="]
 
     def __init__(self):
         cmd.Cmd.__init__(self)
@@ -73,7 +78,7 @@ class MainInterpreter(cmd.Cmd):
             print "\tinspect    - inspect VMIs and define main services"
             print "\tdecompose  - decompose VMIs"
             print "\treassemble - reassemble VMIs"
-            print "\t(evaluate) - tool to evaluate this program (not implemented yet"
+            print "\t(evaluate) - tool to evaluate this program (not implemented yet)"
             print "\treset      - reset local repository of VMI components"
             print "\texit       - exit program"
             print ""
@@ -122,8 +127,14 @@ class MainInterpreter(cmd.Cmd):
             print "Error: \"%s\" is not a valid path. Please try again with a path relative to the directory of this program." % line
         elif os.path.isfile(line):
             self.exp.decomposeVMI(line)
+            with RepositoryDatabase() as repo:
+                self._availableArgsReassembly = repo.getAllVmiNames()
+                self._availableArgsReassembly.append("all")
         elif os.path.isdir(line):
             self.exp.decomposeVMIsInFolder(line)
+            with RepositoryDatabase() as repo:
+                self._availableArgsReassembly = repo.getAllVmiNames()
+                self._availableArgsReassembly.append("all")
         else:
             print "Error: \"%s\" is not a valid path." % line
 
@@ -151,53 +162,331 @@ class MainInterpreter(cmd.Cmd):
     def complete_reassemble(self, text, line, begidx, endidx):
         return [i for i in self._availableArgsReassembly if i.startswith(text)]
 
+    def parseRepetitions(self, text):
+        try:
+            return int(text.rsplit("=", 1)[1])
+        except ValueError as e:
+            print "Error: %s is not a valid number" % text.rsplit("=", 1)[1]
+            return None
+
     def do_evaluate(self,line):
+        args = line.split()
+        repetitions = None
+        path = None
+        func = None
+
+        # no arguments
+        if len(args) == 0:
+            print "Error: missing arguments. Please consult \"help evaluate\"."
+            return
+
+        # one argument, has to be function
+        if len(args) < 2:
+            func = args[0]
+
+        # two arguments, first option, second functionality
+        elif len(args) == 2:
+            if args[0].startswith ("--path="):
+                path = args[0][7:]
+            elif args[0].startswith ("--repetitions="):
+                repetitions = self.parseRepetitions(args[0])
+                if not repetitions: return
+            else:
+                print "Error: With two arguments, first has to be an option. Please consult \"help evaluate\"."
+                return
+            func = args[1]
+
+        # three arguments, two options, one functionality
+        elif len(args) == 3:
+            # first option
+            if args[0].startswith ("--path="):
+                path = args[0][7:]
+            elif args[0].startswith ("--repetitions="):
+                repetitions = self.parseRepetitions(args[0])
+                if not repetitions: return
+            else:
+                print "Error: With three arguments, first two have to be options. Please consult \"help evaluate\"."
+                return
+            # second option
+            # first was repetitions, second has to be path
+            if repetitions and args[1].startswith ("--path="):
+                path = args[1][7:]
+            # first was path, second has to be repetitions
+            elif path and args[1].startswith ("--repetitions="):
+                repetitions = self.parseRepetitions(args[1])
+                if not repetitions: return
+            else:
+                print "Error: With three arguments, first two have to be options. Please consult \"help evaluate\"."
+                return
+            func = args[2]
+
+        else:
+            print "Error: to many arguments. Please consult \"help evaluate\"."
+            return
+
+        # if path set, verify
+        if path:
+            # check if path is directory
+            if path and not os.path.isdir(path):
+                print "Error: \"%s\" is not a directory" % path
+                return
+            # check if path is relative
+            if path.startswith("/"):
+                print "Error: \"%s\" is not a valid path. Please try again with a path relative to the directory of this program." % path
+                return
+            # check if all meta files exist
+            if not self.exp.verifySourceFolder(path):
+                print "Error: Verification of source folder failed. See explanation above."
+                return
+
+        # check if functionality valid
+        if not func in self._availableArgsEvaluateFunctions:
+            print "Error: Functionality \"%s\" not recognized" % func
+            return
+
+        # if repetitions not set, set to default
+        if not repetitions:
+            repetitions = 5
+
+        # check if evaluation folder exists
+        if not os.path.isdir(StaticInfo.relPathLocalEvaluation):
+            os.mkdir(StaticInfo.relPathLocalEvaluation)
+
+        # check if evaluation folder is empty
+        if len(os.listdir(StaticInfo.relPathLocalEvaluation)) > 0:
+            print "Evaluation folder \"%s\" is not empty. Please back up any evaluation files in this folder and remove them." % StaticInfo.relPathLocalEvaluation
+            return
+
+        # start evaluation
+        print ""
+        print "\nEvaluated Functionality:              " + func
+        if path:
+            print "Folder with Images to evaluate:       " + path
+        print "Number of repetitions for evaluation: " + str(repetitions)
+        print ""
+
+        if repetitions > 5:
+            print "You chose to repeat the evaluation process %i times. Depending on the data set, this might take a long time." % repetitions
+            answer = raw_input("\tAre you sure you want to continue, yes or no?")
+            if answer == "yes":
+                pass
+            else:
+                return
+
+        if func == "similarity":
+            if not path:
+                print "Error: no path set. Please consult \"help evaluate\"."
+                return
+            print "\n"
+            self.exp.evaluateSimBetweenAll(path)
+        elif func == "decomposition1":
+            if not path:
+                print "Error: no path set. Please consult \"help evaluate\"."
+                return
+            print "This evaluation requires the local repository to be reset and the directory \"%s\" to be cleared." % StaticInfo.relPathLocalVMIFolder
+            if self.do_reset("") and self.clearVmiFolder():
+                print "\n"
+                self.exp.evaluateDecomposition(path,repetitions, resetBeforeEachDecomposition=False)
+        elif func == "decomposition2":
+            if not path:
+                print "Error: no path set. Please consult \"help evaluate\"."
+                return
+            print "This evaluation requires the local repository to be reset and the directory \"%s\" to be cleared." % StaticInfo.relPathLocalVMIFolder
+            if self.do_reset("") and self.clearVmiFolder():
+                print "\n"
+                self.exp.evaluateDecomposition(path, repetitions, resetBeforeEachDecomposition=True)
+        elif func == "reassembly":
+            print "This evaluation requires the directory \"%s\" to be cleared." % StaticInfo.relPathLocalVMIFolder
+            if self.clearVmiFolder():
+                print "\n"
+                self.exp.evaluateReassembly(repetitions)
+        else:
+            print "Error: Functionality \"%s\" not recognized" % func
+
+    def help_evaluate(self):
+        print "\nUsage: evaluate [options] { decomposition1 | decomposition2 | reassembly | similarity }"
+        print "\n\tEvaluates the given functionality and saves results in folder \"Evaluations\"."
+        print "\nFunctionalities:"
+        print "\tdecomposition1"
+        print "\t\tEvaluates the decomposition process exploiting semantic redundancy (i.e. using a local repository)."
+        print "\t\tOption \"--path\" has to be set to specify a source folder for VMIs (These will only be copied, not manipulated)."
+        print "\n\tdecomposition2"
+        print "\t\tEvaluates the decomposition process without exploiting semantic redundancy (i.e. not using a local repository)."
+        print "\t\tOption \"--path\" has to be set to specify a source folder for VMIs (These will only be copied, not manipulated)."
+        print "\n\treassembly"
+        print "\t\tEvaluates the reassembly process using any VMI present in the local repository."
+        print "\t\tOption \"--path\" is ignored."
+        print "\n\tsimilarity"
+        print "\t\tEvaluates the similarity between each VMI in source folder."
+        print "\t\tOption \"--path\" has to be set to specify a source folder for VMIs (These will not be manipulated)."
+        print "\nOptions:"
+        print "\t--repetitions=x"
+        print "\t\tSpecify number of repetitions for evaluation (default is 5), not applicable for similarity."
+        print "\n\t--path=x"
+        print "\t\tSpecify source folder with VMIs for evaluation (ignored for evaluation of reassembly)"
+        print "\t\tMeta Files for all VMIs have to exist. Files in this folder are not manipulated."
+
+    def complete_evaluate(self, text, line, begidx, endidx):
+        strings = line.split(" ")
+        # complete first argument (option or function)
+        if len(strings) == 2:
+            # complete path
+            if text.startswith("--path="):
+                #return _complete_rel_path(text[7:])
+                return  list( "--path=" + x for x in _complete_rel_path(text[7:]))
+            # complete option
+            elif text.startswith("-"):
+                return _complete_arg_list(text, self._availableArgsEvaluateOptions)
+            else:
+                return _complete_arg_list(text, self._availableArgsEvaluateFunctions)
+        # complete second argument (option or function)
+        elif len(strings) == 3:
+            # option
+            if text.startswith("-"):
+                # complete path
+                if text.startswith("--path="):
+                    return list("--path=" + x for x in _complete_rel_path(text[7:]))
+                # complete option
+                else:
+                    return _complete_arg_list(text, self._availableArgsEvaluateOptions)
+            # function
+            else:
+                return _complete_arg_list(text, self._availableArgsEvaluateFunctions)
+        # complete third argument (function)
+        elif len(strings) == 4:
+            return _complete_arg_list(text, self._availableArgsEvaluateFunctions)
+        else:
+            return None
+
+    def do_evaluateOLD(self,line):
         args = line.split()
         if len(args) < 2:
             print "Error: Command evaluate requires at least two arguments."
-        else:
+            return
+        elif len(args) == 2:
+            repetitions = 5
             func = args[0]
             path = args[1]
-            #TODO: check if path can be written to
-            if func == "similarity":
-                print "not implemented yet."
-            elif func == "decomposition1":
-                print "not implemented yet."
-            elif func == "decomposition2":
-                print "not implemented yet."
-            elif func == "reassembly":
-                print "not implemented yet."
+        elif len(args) == 3:
+            if args[0].startswith("--repetitions="):
+                try:
+                    repetitions = int(args[0].rsplit("=",1)[1])
+                except ValueError as e:
+                    print "Error: %s is not a valid number" % args[0].rsplit("=",1)[1]
+                    return
+                except IndexError as e:
+                    print "Error: expected \"--repetitions=x\", received \"%s\" instead." % args[0]
+                    return
             else:
-                print "Error: Functionality \"%s\" not recognized" % func
+                print "Error: with three arguments, first has to be a valid option. \"%s\" was not recognized" % args[0]
+                return
+            func = args[1]
+            path = args[2]
+        else:
+            print "Error: to many arguments"
+            return
 
-    def help_evaluate(self):
-        print "\nUsage: evaluate [--repetitions=x] func source"
-        print "\n\tevaluates functionality \"func\" on VMIs in firectory \"source\" and saves result in folder \"Evaluations\"."
-        print "\tMeta Files for every VMI in source have to exist. Files in source are not modified."
-        print "\nFunctionalities:"
-        print "\tdecomposition1"
-        print "\t\tEvaluates the decomposition process exploiting semantic redundancy (i.e. using the local repository)."
-        print "\n\tdecomposition2"
-        print "\t\tEvaluates the decomposition process without exploiting semantic redundancy (i.e. not using the local repository)."
-        print "\n\treassembly"
-        print "\t\tEvaluates the reassembly process using any VMI present in the local repository."
-        print "\n\tsimilarity"
-        print "\t\tEvaluates the similarity between each VMI in source folder."
-        print "\nOptions:"
-        print "\t--repetitions=x"
-        print "\t\tDefine number of repetitions for evaluation (default is 5), not applicable for similarity."
+        # check if path is directory
+        if not os.path.isdir(path):
+            print "Error: \"%s\" is not a directory" % path
+            return
+        # check if path is relative
+        if path.startswith("/"):
+            print "Error: \"%s\" is not a valid path. Please try again with a path relative to the directory of this program." % path
+            return
+
+        # check if all meta files exist
+        if not self.exp.verifySourceFolder(path):
+            print "Error: Verification of source folder failed. See explanation above."
+            return
+
+        # check if evaluation folder exists
+        if not os.path.isdir(StaticInfo.relPathLocalEvaluation):
+            os.mkdir(StaticInfo.relPathLocalEvaluation)
+
+        # check if evaluation folder is empty
+        if len(os.listdir(StaticInfo.relPathLocalEvaluation)) > 0:
+            print "Evaluation folder \"%s\" is not empty. Please back up any evaluation files in this folder and remove them." % StaticInfo.relPathLocalEvaluation
+            return
+
+        # start evaluation
+        print "Evaluation"
+        print "\tEvaluated Functionality:              " + func
+        print "\tFolder with Images to evaluate:       " + path
+        print "\tNumber of repetitions for evaluation: " + str(repetitions)
+
+        if func == "similarity":
+            print "\n"
+            self.exp.evaluateSimBetweenAll(path)
+        elif func == "decomposition1":
+            print "This evaluation requires the local repository to be reset and the directory \"%s\" to be cleared." % StaticInfo.relPathLocalVMIFolder
+            if self.do_reset("") and self.clearVmiFolder():
+                print "\n"
+                self.exp.evaluateDecomposition(path,repetitions, resetBeforeEachDecomposition=False)
+        elif func == "decomposition2":
+            print "This evaluation requires the local repository to be reset and the directory \"%s\" to be cleared." % StaticInfo.relPathLocalVMIFolder
+            if self.do_reset("") and self.clearVmiFolder():
+                print "\n"
+                self.exp.evaluateDecomposition(path, repetitions, resetBeforeEachDecomposition=True)
+        elif func == "reassembly":
+            print "not implemented yet."
+        else:
+            print "Error: Functionality \"%s\" not recognized" % func
+
+    def complete_evaluateOLD(self, text, line, begidx, endidx):
+        strings = line.split(" ")
+        # complete first argument (option or function)
+        if len(strings) == 2:
+            if text.startswith("-"):
+                return _complete_arg_list(text, self._availableArgsEvaluateOptions)
+            elif text != "":
+                return _complete_arg_list(text, self._availableArgsEvaluateFunctions)
+            else:
+                return None
+        # complete second argument (function or path)
+        elif len(strings) == 3:
+            # first argument was option, next has to be function
+            if strings[1].startswith("-"):
+                return _complete_arg_list(text, self._availableArgsEvaluateFunctions)
+            # first argument was function, next has to be path
+            else:
+                return _complete_rel_path(text)
+        # complete third argument
+        elif len(strings) == 4:
+            # second argument was function, next is path
+            if strings[2] in self._availableArgsEvaluateFunctions:
+                return _complete_rel_path(text)
+            # second argument was path, no further args required
+            else:
+                return None
+        else:
+            return None
 
     def do_reset(self, line):
         """
         Reset the repository: Removes all base images, packages, user data and meta data.
         """
         print "Attention: This operation will reset the whole repository -> Baseimages, packages, user data and meta data will be removed!"
-        answer = raw_input("Are you sure you want to contine, yes or no?")
+        answer = raw_input("\tAre you sure you want to continue, yes or no?")
         if answer == "yes":
-            print "Resetting repository..."
-            exp = Expelliarmus()
-            exp.resetRepo()
+            print "\tResetting repository..."
+            self.exp.resetRepo()
+            print "\tRepository reset."
+            return True
+        else:
+            return False
 
+    def clearVmiFolder(self):
+        print "Attention: This operation will clear the directory \"%s\"!" % StaticInfo.relPathLocalVMIFolder
+        answer = raw_input("\tAre you sure you want to continue, yes or no?")
+        if answer == "yes":
+            if os.path.isdir(StaticInfo.relPathLocalVMIFolder):
+                shutil.rmtree(StaticInfo.relPathLocalVMIFolder)
+            os.mkdir(StaticInfo.relPathLocalVMIFolder)
+            print "\tDirectory cleared."
+            return True
+        else:
+            return False
 
     def do_exit(self, line):
         """

@@ -239,7 +239,42 @@ class SimilarityCalculator:
         return graphSimilarity
 
     @staticmethod
-    def computeSimilarityManyToMany(vmisAndMS, onlyOnMainServices):
+    def computeSimilarityManyToMany(vmiData, onlyOnMainServices):
+        if onlyOnMainServices:
+            print "=====Calculating similarities with respect to main services between each of %i VMIs" % len(vmiData)
+        else:
+            print "=====Calculating similarities between each of %i VMIs" % len(vmiData)
+
+        sortedVMIDescriptorList = list()
+        count = 0
+        for (pathToVMI, vmiFileName, mainServices) in vmiData:
+            count = count + 1
+            print "Creating Descriptor for vmi \"%s\" (%i/%i)..." % (vmiFileName, count, len(vmiData))
+            (guest, root) = GuestFSHelper.getHandle(pathToVMI, rootRequired=True)
+            vmi = VMIDescriptor(pathToVMI, vmiFileName, mainServices, guest, root)
+            GuestFSHelper.shutdownHandle(guest)
+            sortedVMIDescriptorList.append(vmi)
+
+        similarities = defaultdict(dict)
+        for vmi1 in sortedVMIDescriptorList:
+            print "Similarities for VMI \"%s\":" % vmi1.vmiName
+            for vmi2 in sortedVMIDescriptorList:
+                if vmi1.pathToVMI == vmi2.pathToVMI:
+                    similarities[vmi1.vmiName][vmi2.vmiName] = None
+                else:
+                    # Check if Main Services exist
+                    SimilarityCalculator.checkMainServicesExistence(vmi1, vmi1.mainServices)
+                    SimilarityCalculator.checkMainServicesExistence(vmi2, vmi2.mainServices)
+
+                    sim = SimilarityCalculator.computeWeightedSimilarityBetweenVMIDescriptors(vmi1, vmi2,
+                                                                                              onlyOnMainServices,
+                                                                                              verbose=False)
+                    similarities[vmi1.vmiName][vmi2.vmiName] = sim
+                    print "\t%0.2f similarity to VMI \"%s\"" % (sim, vmi2.vmiName)
+        return similarities
+
+    @staticmethod
+    def computeSimilarityManyToManyOLD(vmisAndMS, onlyOnMainServices):
         if onlyOnMainServices:
             print "=====Calculating similarities with respect to main services between each of %i VMIs" % len(vmisAndMS)
         else:

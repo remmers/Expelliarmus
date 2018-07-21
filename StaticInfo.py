@@ -27,6 +27,8 @@ class StaticInfo:
 
     relPathLocalVMIFolder = "VMIs"
 
+    relPathLocalEvaluation = "Evaluations"
+
     relPathDocker = "Docker"
     relPathDockerCreation = relPathDocker + "/Creation"
     relPathDockerHomeFolders = relPathDocker + "/Homefolders"
