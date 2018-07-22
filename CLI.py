@@ -47,6 +47,8 @@ class MainInterpreter(cmd.Cmd):
         print "\n\n\n\n"
         print StaticInfo.cliIntroHelp
 
+        self.exp = Expelliarmus()
+
         with RepositoryDatabase() as repo:
             numVMIs = repo.getNumberOfVMIs()
             numBases = repo.getNumberOfBaseImages()
@@ -60,7 +62,7 @@ class MainInterpreter(cmd.Cmd):
         print "\tBase Images: {0:>{width}s}".format(numBases, width=digits)
         print "\tPackages:    {0:>{width}s}".format(numPkgs, width=digits)
         print "\nSupported VMI formats: " + ",".join(StaticInfo.validVMIFormats) + "\n\n\n\n"
-        self.exp = Expelliarmus()
+
 
     def emptyline(self):
         pass
