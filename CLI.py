@@ -80,7 +80,7 @@ class MainInterpreter(cmd.Cmd):
             print "\tinspect    - inspect VMIs and define main services"
             print "\tdecompose  - decompose VMIs"
             print "\treassemble - reassemble VMIs"
-            print "\t(evaluate) - tool to evaluate this program (not implemented yet)"
+            print "\tevaluate   - tool to evaluate this program"
             print "\treset      - reset local repository of VMI components"
             print "\texit       - exit program"
             print ""
@@ -327,6 +327,7 @@ class MainInterpreter(cmd.Cmd):
         print "\n\t--path=x"
         print "\t\tSpecify source folder with VMIs for evaluation (ignored for evaluation of reassembly)"
         print "\t\tMeta Files for all VMIs have to exist. Files in this folder are not manipulated."
+        print ""
 
     def complete_evaluate(self, text, line, begidx, endidx):
         strings = line.split(" ")
