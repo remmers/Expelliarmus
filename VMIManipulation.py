@@ -301,8 +301,8 @@ class VMIManipulatorAPT(VMIManipulator):
         :param packageList: packages to remove (main services)
         :return: list of packages that have been removed
         """
-        self.guest.sh("apt-get purge --auto-remove -y " + " ".join(packageList))
-        self.guest.sh("apt-get clean")
+        self.guest.sh("DEBIAN_FRONTEND=noninteractive apt-get purge --auto-remove -y " + " ".join(packageList))
+        self.guest.sh("DEBIAN_FRONTEND=noninteractive apt-get clean")
 
     def exportHomeDir(self):
         if os.path.isfile(self.localUserBackupPath):
